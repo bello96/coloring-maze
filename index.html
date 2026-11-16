@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#1a110c" />
+    <meta name="description" content="让弹珠沿直线滚到头，把木托盘迷宫的每一格都染上色。步数越少越好。" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="染色迷宫" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>染色迷宫</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <canvas id="stage" aria-label="游戏画面"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <div class="tally" id="tally" hidden>
+      <p class="tally-steps"><output id="steps">0</output><span>步</span></p>
+      <p class="tally-par" id="par"></p>
+    </div>
+
+    <nav class="tools" id="tools" hidden>
+      <button class="chip" id="btn-undo" type="button">撤销</button>
+      <button class="chip" id="btn-restart" type="button">重玩</button>
+      <button class="chip" id="btn-levels" type="button">选关</button>
+      <button class="chip chip-icon" id="btn-sound" type="button" aria-label="声音" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" />
+          <path class="on" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" />
+          <path class="off" d="M15.5 9.5l5 5M20.5 9.5l-5 5" />
+        </svg>
+      </button>
+    </nav>
+
+    <section class="result" id="result" hidden aria-live="polite">
+      <div class="stars" id="result-stars" role="img"></div>
+      <h2 id="result-title"></h2>
+      <p id="result-detail"></p>
+      <div class="result-actions">
+        <button class="chip" id="btn-again" type="button">再来一次</button>
+        <button class="chip chip-main" id="btn-next" type="button">下一关</button>
+      </div>
+    </section>
+
+    <section class="levels" id="levels" hidden aria-labelledby="levels-title">
+      <div class="levels-board">
+        <header>
+          <h2 id="levels-title">选关</h2>
+          <button class="chip chip-icon" id="btn-close-levels" type="button" aria-label="关闭">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <ol class="levels-grid" id="levels-grid"></ol>
+      </div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

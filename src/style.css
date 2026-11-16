@@ -1,0 +1,488 @@
+/* 界面上所有东西都来自同一间木工房：深色木片做的按钮、刻字填漆、染过色的木头。
+   唯一鲜艳的颜色是这一关的染料（--dye），其余都很安静，让位给中间的托盘。 */
+
+@font-face {
+  font-family: 'Noto Serif SC';
+  src: url('./assets/fonts/noto-serif-sc-subset.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --table: #120c09;
+  --cream: #ecdcbc;
+  --cream-dim: #c2ad8d;
+  --walnut: #6a4328;
+  --walnut-edge: #2a1a11;
+  --birch: #dcc08f;
+  --ink: #2c1a0e;
+  --dye: #2646b8;
+  /* 由程序画出来的两种木纹，启动时填进来（见 app.ts） */
+  --wood-dark: none;
+  --wood-light: none;
+  --font: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --pad-top: env(safe-area-inset-top, 0px);
+  --pad-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--table);
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  font-family: var(--font);
+  font-weight: 700;
+  color: var(--cream);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* 四角暗下去，像一盏灯照在桌子中间 */
+.vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 78% 78% at 50% 48%, transparent 46%, rgba(6, 3, 2, 0.6) 100%);
+}
+
+/* 画面起不来时的那句话 */
+.broken {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1.8;
+  letter-spacing: 0.08em;
+}
+
+/* ───── 步数 ───── */
+
+.tally {
+  position: fixed;
+  top: calc(var(--pad-top) + 14px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
+}
+
+.tally p {
+  margin: 0;
+}
+
+.tally-steps output {
+  font-size: 46px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.tally-steps span {
+  margin-left: 6px;
+  font-size: 17px;
+}
+
+.tally-par {
+  margin-top: 6px;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  color: var(--cream-dim);
+}
+
+/* ───── 木片按钮 ───── */
+
+.chip {
+  font: 700 16px/1 var(--font);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  /* 字距加在每个字的右边，左边补上同样多才居中 */
+  padding: 13px 18px 12px calc(18px + 0.14em);
+  color: var(--cream);
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.75);
+  border: 0;
+  border-radius: 9px;
+  background: var(--walnut) var(--wood-dark) center / 420px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 3px 0 var(--walnut-edge),
+    3px 8px 12px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.06s,
+    box-shadow 0.06s;
+}
+
+.chip:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 1px 0 var(--walnut-edge),
+    1px 3px 5px rgba(0, 0, 0, 0.5);
+}
+
+.chip:disabled {
+  color: rgba(236, 220, 188, 0.36);
+  cursor: default;
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 3px;
+}
+
+/* 主要的那个按钮是一块染过色的木片 */
+.chip-main {
+  background: var(--dye) var(--wood-light) center / 420px;
+  background-blend-mode: multiply;
+  text-shadow: -1px -1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.chip-icon {
+  padding: 9px 11px;
+  line-height: 0;
+}
+
+.chip-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(-1px -1px 0 rgba(22, 11, 5, 0.75));
+}
+
+#btn-sound[aria-pressed='true'] .off,
+#btn-sound[aria-pressed='false'] .on {
+  display: none;
+}
+
+.tools {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--pad-bottom) + 20px);
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.tools .chip {
+  pointer-events: auto;
+}
+
+/* ───── 通关 ───── */
+
+.result {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--pad-bottom) + 18px);
+  width: min(340px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 16px 20px 20px;
+  text-align: center;
+  border-radius: 14px;
+  background: var(--walnut) var(--wood-dark) center / 560px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 4px 0 var(--walnut-edge),
+    5px 14px 26px rgba(0, 0, 0, 0.6);
+  transform: translateX(-50%);
+  animation: plaque-in 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+
+@keyframes plaque-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 40px);
+  }
+}
+
+.result h2 {
+  margin: 8px 0 0;
+  font-size: 24px;
+  letter-spacing: 0.1em;
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.75);
+}
+
+.result p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  color: var(--cream-dim);
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.6);
+}
+
+.result-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* 星星是刻在木头上的凹槽；得到的那几颗里填了这一关的染料 */
+.stars {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.stars svg {
+  width: 38px;
+  height: 38px;
+  fill: rgba(20, 10, 5, 0.5);
+  stroke: rgba(20, 10, 5, 0.6);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  filter: drop-shadow(1px 1px 0 rgba(255, 226, 184, 0.16));
+}
+
+.stars svg.won {
+  fill: var(--star, var(--dye));
+  stroke: rgba(0, 0, 0, 0.35);
+  filter: drop-shadow(1px 1px 0 rgba(255, 226, 184, 0.16)) brightness(1.25) saturate(1.1);
+}
+
+.result .stars svg.won {
+  animation: star-in 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+
+.result .stars svg.won:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.result .stars svg.won:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+@keyframes star-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+/* ───── 选关 ───── */
+
+.levels {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: calc(var(--pad-top) + 16px) 16px calc(var(--pad-bottom) + 16px);
+  box-sizing: border-box;
+  background: rgba(8, 5, 3, 0.74);
+  overflow: auto;
+}
+
+.levels-board {
+  width: min(560px, 100%);
+  box-sizing: border-box;
+  padding: 14px 16px 18px;
+  border-radius: 16px;
+  background: var(--walnut) var(--wood-dark) center / 700px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 5px 0 var(--walnut-edge),
+    8px 20px 40px rgba(0, 0, 0, 0.65);
+}
+
+.levels-board header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.levels-board h2 {
+  margin: 0 0 0 4px;
+  font-size: 22px;
+  letter-spacing: 0.2em;
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.75);
+}
+
+.levels-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 每一关是嵌在板子里的一小块浅色木片 */
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  font: 700 21px/1 var(--font);
+  font-variant-numeric: lining-nums;
+  color: var(--ink);
+  background: var(--birch) var(--wood-light) center / 300px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.35),
+    0 2px 0 rgba(20, 10, 5, 0.55),
+    2px 4px 6px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tile:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.tile:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
+}
+
+.tile[aria-current='true'] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 0 3px var(--cream),
+    2px 4px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* 还没开的关：一块没打磨过的暗木片 */
+.tile:disabled {
+  color: rgba(44, 26, 14, 0.55);
+  filter: brightness(0.5) saturate(0.6);
+  cursor: default;
+}
+
+.tile .stars {
+  gap: 1px;
+}
+
+.tile .stars svg {
+  width: 11px;
+  height: 11px;
+  fill: rgba(60, 36, 14, 0.22);
+  stroke: none;
+  filter: none;
+}
+
+.tile .stars svg.won {
+  fill: var(--star);
+  filter: none;
+}
+
+.tile small {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(44, 26, 14, 0.72);
+}
+
+/* ───── 窄屏、横屏 ───── */
+
+@media (max-width: 480px) {
+  .chip {
+    font-size: 15px;
+    padding: 12px 14px 11px calc(14px + 0.14em);
+  }
+
+  .chip-icon {
+    padding: 8px 9px;
+  }
+
+  .tools {
+    gap: 9px;
+  }
+
+  .levels-grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+}
+
+/* 手机横过来：上下没地方了，步数放到左边，按钮竖着排在右边 */
+@media (max-height: 520px) and (orientation: landscape) {
+  .tally {
+    top: 50%;
+    left: calc(env(safe-area-inset-left, 0px) + 18px);
+    right: auto;
+    transform: translateY(-50%);
+  }
+
+  .tools {
+    left: auto;
+    right: calc(env(safe-area-inset-right, 0px) + 16px);
+    top: 0;
+    bottom: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .result {
+    left: auto;
+    right: calc(env(safe-area-inset-right, 0px) + 16px);
+    bottom: 50%;
+    width: 264px;
+    padding-left: 14px;
+    padding-right: 14px;
+    transform: translateY(50%);
+    animation: none;
+  }
+
+  .result .chip {
+    padding-left: calc(14px + 0.14em);
+    padding-right: 14px;
+  }
+
+  .levels-grid {
+    grid-template-columns: repeat(10, 1fr);
+  }
+
+  .levels-board {
+    width: min(760px, 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result,
+  .result .stars svg.won {
+    animation: none;
+  }
+
+  .chip {
+    transition: none;
+  }
+}

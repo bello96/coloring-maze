@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wrangler/
+*.log
+.DS_Store
+# 参考视频只在本地看，不入库
+参考视频.mp4
