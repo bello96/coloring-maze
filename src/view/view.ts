@@ -5,6 +5,7 @@ import { Drops } from './drops.ts';
 import { OUTER } from './dims.ts';
 import { Marble } from './marble.ts';
 import { rollProfile, settle } from './motion.ts';
+import { Governor, isModestGpu, sharpnessFor } from './sharpness.ts';
 import { Stage, type Insets } from './stage.ts';
 import { Tray } from './tray.ts';
 import { Waits } from './waits.ts';
@@ -71,14 +72,18 @@ export class GameView {
   /** 现在取景时四边留出的地方 */
   private insets: Insets | null = null;
   private layoutToken = 0;
-  private size = { width: 1, height: 1 };
-  private sharpness = 2;
-  private frames = 0;
-  private slowFrames = 0;
+  private size = { width: 0, height: 0, device: 0 };
+  /** 一帧最多画多少个点：看显卡的档次定 */
+  private readonly budget: number;
+  /** 盯着帧率、决定画面画多细 */
+  private governor = new Governor(1);
+  /** 上一帧各个托盘的位置和倾斜，用来看它们动没动（动了影子才要重画） */
+  private trayPose = '';
 
   constructor(canvas: HTMLCanvasElement, font: string, events: ViewEvents) {
     this.stage = new Stage(canvas, font);
     this.events = events;
+    this.budget = isModestGpu(this.stage.gpuName()) ? 3_000_000 : 6_000_000;
   }
 
   /** 从画面创建起过了多少秒 */
@@ -101,7 +106,9 @@ export class GameView {
     const dt = Math.min(0.05, Math.max(0, elapsed));
     this.lastFrame = t;
     // 只在连续出画面的时候量速度：停了一阵再醒过来的第一帧不算
-    if (this.streak) this.watchSpeed(elapsed);
+    if (this.streak && this.governor.frame(elapsed) && this.insets) {
+      this.stage.resize(this.size.width, this.size.height, this.governor.ratio, this.insets);
+    }
     this.streak = true;
 
     while (this.timers.length > 0 && this.timers[0].at <= t) this.timers.shift()!.run();
@@ -112,6 +119,7 @@ export class GameView {
 
     let dropsMoving = false;
     let tilting = false;
+    let pose = '';
     for (const b of [this.board, this.leaving]) {
       if (!b) continue;
       // 托盘的倾斜一点点地跟上去；抬起一边的同时整体略微升高，这样低的那一边始终贴着桌面
@@ -127,18 +135,25 @@ export class GameView {
       }
       b.tray.group.rotation.set(tilt.x, 0, -tilt.z);
       b.tray.group.position.y = (OUTER / 2) * (Math.abs(Math.sin(tilt.x)) + Math.abs(Math.sin(tilt.z)));
+      const at = b.tray.group.position;
+      pose += `${at.x},${at.z},${tilt.x},${tilt.z};`;
       b.tray.stain.uniforms.uTime.value = t;
       const m = b.marble.group;
       b.tray.stain.setBall(m.position.x, m.position.y, m.position.z, m.visible ? b.marble.radius : 0);
       b.drops.update(dt);
       dropsMoving ||= b.drops.active;
     }
-    this.stage.render();
+    this.stage.render(pose !== this.trayPose);
+    this.trayPose = pose;
 
     const busy = this.ball !== null || this.extras.length > 0 || this.timers.length > 0 || dropsMoving || tilting;
     if (busy) this.activeUntil = t + LINGER;
-    if (t < this.activeUntil) this.raf = requestAnimationFrame(this.frame);
-    else this.streak = false;
+    if (t < this.activeUntil) {
+      // 这一帧里可能已经有人叫过 wake() 排好了下一帧；再排一次的话，以后每帧就要画两遍
+      if (!this.raf) this.raf = requestAnimationFrame(this.frame);
+    } else {
+      this.streak = false;
+    }
   };
 
   private at(time: number, run: () => void): void {
@@ -184,10 +199,15 @@ export class GameView {
   layout(width: number, height: number, safe: Insets, glide: boolean): void {
     const from = this.insets;
     const token = ++this.layoutToken;
-    this.size = { width, height };
+    const device = window.devicePixelRatio || 1;
+    if (width !== this.size.width || height !== this.size.height || device !== this.size.device) {
+      // 画面大小变了：画多细重新定（见 sharpness.ts），带不动的话再由 governor 往下调
+      this.size = { width, height, device };
+      this.governor = new Governor(sharpnessFor(width, height, device, this.budget));
+    }
     if (!glide || !from || (from.left === safe.left && from.right === safe.right && from.top === safe.top && from.bottom === safe.bottom)) {
       this.insets = safe;
-      this.stage.resize(width, height, this.pixelRatio(), safe);
+      this.stage.resize(width, height, this.governor.ratio, safe);
       this.wake();
       return;
     }
@@ -197,28 +217,8 @@ export class GameView {
       const e = easeInOut(k);
       const mix = (a: number, b: number): number => a + (b - a) * e;
       this.insets = { left: mix(from.left, safe.left), right: mix(from.right, safe.right), top: mix(from.top, safe.top), bottom: mix(from.bottom, safe.bottom) };
-      this.stage.resize(width, height, this.pixelRatio(), this.insets);
+      this.stage.resize(width, height, this.governor.ratio, this.insets);
     });
-  }
-
-  /** 一个屏幕像素画几个点：屏幕再细也不超过 sharpness，机器带不动时 sharpness 会往下调 */
-  private pixelRatio(): number {
-    return Math.min(window.devicePixelRatio || 1, this.sharpness);
-  }
-
-  /**
-   * 盯着动画时每一帧花了多久。连续一段时间大多数帧都慢（低于每秒 40 帧左右），就把画面画得粗一点。
-   * 只降不升：降下来说明这台机器吃力，没必要再试回去。
-   */
-  private watchSpeed(elapsed: number): void {
-    this.frames++;
-    if (elapsed > 0.026) this.slowFrames++;
-    if (this.frames < 50) return;
-    const struggling = this.slowFrames > 35;
-    this.frames = this.slowFrames = 0;
-    if (!struggling || this.pixelRatio() <= 1 || !this.insets) return;
-    this.sharpness = Math.max(1, this.pixelRatio() - 0.5);
-    this.stage.resize(this.size.width, this.size.height, this.pixelRatio(), this.insets);
   }
 
   /** 界面上的木片要用的两种木纹图片 */
@@ -327,11 +327,13 @@ export class GameView {
           this.nudge(tray, dx, dz, strength);
           finish();
         }
-        const off = settle(dt - profile.duration, gap, profile.endSpeed);
+        const since = dt - profile.duration;
+        // 回弹的那一点点晃动 0.7 秒后已经看不出来了，直接摆正在格子中间
+        const off = since < 0.7 ? settle(since, gap, profile.endSpeed) : 0;
         marble.group.position.set(to.x + dx * off, marble.radius, to.z + dz * off);
         marble.roll(dx, dz, off - rolled);
         rolled = off;
-        return dt - profile.duration < 0.7;
+        return since < 0.7;
       };
     });
   }
@@ -358,7 +360,8 @@ export class GameView {
           hit = true;
           this.events.impact(Math.min(0.3, profile.endSpeed / TOP_SPEED));
         }
-        off = settle(dt - profile.duration, gap, profile.endSpeed);
+        const since = dt - profile.duration;
+        off = since < 0.6 ? settle(since, gap, profile.endSpeed) : 0;
       }
       marble.group.position.set(center.x + dx * off, marble.radius, center.z + dz * off);
       marble.roll(dx, dz, off - rolled);
@@ -445,13 +448,16 @@ export class GameView {
     });
   }
 
-  /** 通关：一圈湿润的反光从弹珠所在处荡开，弹珠原地跳一下。演完后结束等待。 */
-  celebrate(): Promise<void> {
+  /**
+   * 通关：一圈湿润的反光从弹珠所在处荡开，弹珠原地跳一下。演完后结束等待。
+   * @param cell 弹珠停在哪一格。跳起、落下都在这一格的正中——不能用弹珠此刻的位置，它刚撞完墙，还贴在墙边没弹回来
+   */
+  celebrate(cell: number): Promise<void> {
     const board = this.board;
     if (!board) return Promise.resolve();
-    const { tray, marble } = board;
+    const { tray } = board;
     const t0 = this.now() + 0.28;
-    const here = new THREE.Vector3(marble.group.position.x, 0, marble.group.position.z);
+    const here = tray.cellCenter(cell).clone();
     for (let cell = 0; cell < tray.level.floor.length; cell++) {
       if (!tray.level.floor[cell]) continue;
       const c = tray.cellCenter(cell, this.scratch);

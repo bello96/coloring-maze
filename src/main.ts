@@ -1,15 +1,18 @@
 import './style.css';
 import { App } from './app.ts';
+import { showBroken } from './ui/broken.ts';
 
 const FONT = '"Noto Serif SC", "Songti SC", "STSong", "SimSun", serif';
 
 async function boot(): Promise<void> {
-  // 托盘上刻的字要用这套字体画，所以等它到了再开始；一秒半还没到就先用系统里的宋体
-  await Promise.race([
+  // 托盘上刻的字要用这套字体画，所以等它到了才摆第一个托盘；一秒半还没到就先用系统里的宋体。
+  // 字体在下载的同时，先把木纹画好、把舞台搭起来（这要花零点几秒到一两秒），两件事不必一前一后。
+  const font = Promise.race([
     document.fonts.load('700 40px "Noto Serif SC"', '染色迷宫第关0123456789').catch(() => undefined),
     new Promise((resolve) => setTimeout(resolve, 1500)),
   ]);
   const app = new App(document.getElementById('stage') as HTMLCanvasElement, FONT);
+  await font;
   app.start();
   // 给自动化检查留的口子：在控制台里输入 __maze() 能看到当前的局面
   Object.assign(window, { __maze: () => app.snapshot() });
@@ -17,11 +20,4 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) Object.assign(window, { __app: app });
 }
 
-boot().catch((err: unknown) => {
-  // 画面起不来（多半是浏览器太旧、不支持 WebGL2）：至少说一声，别只留一片黑
-  console.error(err);
-  const note = document.createElement('p');
-  note.className = 'broken';
-  note.textContent = '这个浏览器显示不了游戏画面，换一个新一些的浏览器试试。';
-  document.body.append(note);
-});
+boot().catch(showBroken);

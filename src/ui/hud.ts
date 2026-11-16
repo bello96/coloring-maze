@@ -110,7 +110,8 @@ export class Hud {
     this.next.hidden = !info.hasNext;
     this.tools.hidden = true;
     this.result.hidden = false;
-    (info.hasNext ? this.next : el('btn-again')).focus({ preventScroll: true });
+    // 选关面板正盖在上面的话，焦点留在面板里，不要落到被盖住的按钮上
+    if (this.levels.hidden) (info.hasNext ? this.next : el('btn-again')).focus({ preventScroll: true });
   }
 
   hideResult(): void {

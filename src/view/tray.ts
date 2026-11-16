@@ -186,6 +186,12 @@ export class Tray {
     color.anisotropy = assets.anisotropy;
     const relief = new THREE.CanvasTexture(draw(assets.walnutRelief, size / 2, 'rgba(0, 0, 0, 0.6)', null));
     relief.flipY = false;
+    // 这两张画布很大。手机浏览器给画布的内存有上限，光等垃圾回收来不及，
+    // 所以托盘用完时把它们缩成零，马上把内存还回去。
+    for (const texture of [color, relief]) {
+      const canvas = texture.image as HTMLCanvasElement;
+      this.owned.push({ dispose: () => void (canvas.width = canvas.height = 0) });
+    }
     return { color, relief };
   }
 

@@ -3,7 +3,7 @@
   // 发布的是 `npm run build` 生成的 dist/ 目录。
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "coloring-maze",
-  "compatibility_date": "2026-11-02",
+  "compatibility_date": "2026-11-16",
   "assets": {
     "directory": "./dist"
   },

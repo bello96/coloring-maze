@@ -20,6 +20,8 @@ const TILT = 13;
 const TALLEST = BASE_THICKNESS + 0.85;
 /** 平时阴影只需要盖住托盘这么大一块；换关时托盘要滑出画面，临时放大 */
 const SHADOW_REACH = 9.5;
+/** 平时影子边缘柔化多少（阴影图上的像素数） */
+const SHADOW_SOFTNESS = 5;
 
 /** 舞台：渲染器、相机、灯光、桌面，以及所有托盘共用的木纹素材 */
 export class Stage {
@@ -31,8 +33,11 @@ export class Stage {
   readonly assets: TrayAssets;
   private readonly key: THREE.DirectionalLight;
   private readonly woods: { readonly dark: HTMLCanvasElement; readonly light: HTMLCanvasElement };
-  private width = 1;
-  private height = 1;
+  private width = 0;
+  private height = 0;
+  private ratio = 0;
+  /** 影子要重画（灯光的范围变了） */
+  private shadowsStale = true;
 
   constructor(canvas: HTMLCanvasElement, font: string) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -41,7 +46,16 @@ export class Stage {
     this.renderer.toneMappingExposure = 1;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // 投影子的只有托盘，它不动的时候影子不用每帧重画（见 render）
+    this.renderer.shadowMap.autoUpdate = false;
+    // 玻璃球后面的景象要先单独画一遍再折射；球很小，这一遍用一半的精度就够，能省下不少
+    this.renderer.transmissionResolutionScale = 0.5;
     this.scene.background = new THREE.Color(0x120c09);
+
+    // 手机上切到后台久了，系统会把画面占用的显卡资源收走。回来时与其一样样重建，不如整页重开：
+    // 进度是存着的，重开后还是这一关。
+    canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
+    canvas.addEventListener('webglcontextrestored', () => location.reload());
 
     // 四周柔和的环境光和玻璃球上的反光，来自一间程序生成的"摄影棚"，不用任何图片
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -56,7 +70,6 @@ export class Stage {
     this.key.shadow.mapSize.set(2048, 2048);
     this.key.shadow.bias = -0.0005;
     this.key.shadow.normalBias = 0.025;
-    this.key.shadow.radius = 5;
     this.key.shadow.camera.near = 2;
     this.key.shadow.camera.far = 60;
     this.setShadowReach(SHADOW_REACH);
@@ -106,23 +119,32 @@ export class Stage {
     this.scene.add(this.board);
   }
 
-  /** 阴影要盖住左右多远（世界单位） */
+  /**
+   * 阴影要盖住离中心多远（世界单位）。
+   * 光是斜着照下来的，托盘左右滑动时，在"从光源看过去"的画面里是斜着走的，所以四个方向要一起放宽。
+   * 范围放宽后同一张阴影图要盖更大的地方，影子会变糊；把柔化的幅度按比例收小，边缘看起来才和平时差不多。
+   */
   setShadowReach(reach = SHADOW_REACH): void {
     const cam = this.key.shadow.camera;
-    cam.left = -reach;
-    cam.right = reach;
-    cam.top = SHADOW_REACH;
-    cam.bottom = -SHADOW_REACH;
+    cam.left = cam.bottom = -reach;
+    cam.right = cam.top = reach;
     cam.updateProjectionMatrix();
-    this.key.shadow.needsUpdate = true;
+    this.key.shadow.radius = (SHADOW_SOFTNESS * SHADOW_REACH) / reach;
+    this.shadowsStale = true;
   }
 
   /** 画面大小变了，或者界面占的地方变了：重新取景 */
   resize(width: number, height: number, pixelRatio: number, safe: Insets): void {
-    this.width = Math.max(1, width);
-    this.height = Math.max(1, height);
-    this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(this.width, this.height, false);
+    width = Math.max(1, width);
+    height = Math.max(1, height);
+    // 只有大小真的变了才动画布：重设画布大小会清空它、重新分配显存，取景滑动时每帧都做就卡了
+    if (width !== this.width || height !== this.height || pixelRatio !== this.ratio) {
+      this.width = width;
+      this.height = height;
+      this.ratio = pixelRatio;
+      this.renderer.setPixelRatio(pixelRatio);
+      this.renderer.setSize(width, height, false);
+    }
     const req: FrameRequest = {
       fov: FOV,
       tilt: TILT,
@@ -136,8 +158,21 @@ export class Stage {
     applyFraming(this.camera, frameBox(req), req);
   }
 
-  render(): void {
+  /** @param trayMoved 这一帧托盘动过（滑动、倾斜、被撞得一晃），影子要跟着重画 */
+  render(trayMoved: boolean): void {
+    if (trayMoved || this.shadowsStale) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowsStale = false;
+    }
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** 显卡的名字；浏览器不给的话是空串 */
+  gpuName(): string {
+    const gl = this.renderer.getContext();
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const name: unknown = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '';
+    return typeof name === 'string' ? name : '';
   }
 
   /** 把两种木纹缩小成图片地址，界面上的木片按钮和面板拿去当底纹，这样和托盘是同一种木头 */

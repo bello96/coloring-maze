@@ -57,3 +57,16 @@ export function readProgress(raw: string | null, levels: number): Progress {
   if (typeof last === 'number' && Number.isInteger(last) && isUnlocked(p, last)) return { ...p, last };
   return p;
 }
+
+/**
+ * 把别处（同一个游戏开着的另一个标签页）存下的进度合进来：每一关取两边里更好的成绩。
+ * "上次玩到哪"和"是否静音"以自己这边为准。返回新的进度，两边都不改。
+ */
+export function mergeProgress(mine: Progress, theirs: Progress): Progress {
+  const best = mine.best.map((own, i) => {
+    const other = theirs.best[i] ?? 0;
+    if (own > 0 && other > 0) return Math.min(own, other);
+    return own > 0 ? own : other;
+  });
+  return { ...mine, best };
+}

@@ -50,7 +50,8 @@ export class Sound {
       source.connect(this.rollTone).connect(this.rollGain).connect(this.master);
       source.start();
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    // 不只是 suspended：iPhone 上被来电、锁屏打断后停在 interrupted，也要靠这一下恢复
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
   }
 
   setMuted(muted: boolean): void {
@@ -101,10 +102,10 @@ export class Sound {
     const s = Math.max(0.08, Math.min(1, strength));
     const v = Math.pow(s, 1.25);
     const detune = 1 + (Math.random() - 0.5) * 0.07;
-    this.ping(ctx, 590 * detune, 0.34 * v, 0.055);
-    this.ping(ctx, 1520 * detune, 0.16 * v, 0.03);
-    this.ping(ctx, 180, 0.42 * v, 0.085, 92);
-    this.hiss(ctx, 'highpass', 2400, 0.3 * v, 0.001, 0.014);
+    this.ping(ctx, 590 * detune, 0.26 * v, 0.055);
+    this.ping(ctx, 1520 * detune, 0.12 * v, 0.03);
+    this.ping(ctx, 180, 0.32 * v, 0.085, 92);
+    this.hiss(ctx, 'highpass', 2400, 0.22 * v, 0.001, 0.014);
   }
 
   /** 弹珠落在底板上：比撞墙低沉 */
@@ -116,7 +117,7 @@ export class Sound {
     const detune = 1 + (Math.random() - 0.5) * 0.06;
     this.ping(ctx, 410 * detune, 0.3 * v, 0.06);
     this.ping(ctx, 980 * detune, 0.12 * v, 0.03);
-    this.ping(ctx, 140, 0.6 * v, 0.12, 68);
+    this.ping(ctx, 140, 0.5 * v, 0.12, 68);
     this.hiss(ctx, 'highpass', 1800, 0.2 * v, 0.001, 0.016);
   }
 
@@ -125,7 +126,7 @@ export class Sound {
     const ctx = this.ctx;
     if (!ctx || !this.rollGain || !this.rollTone) return;
     const v = Math.max(0, Math.min(1, speed));
-    this.rollGain.gain.setTargetAtTime(0.11 * Math.pow(v, 1.3), ctx.currentTime, v > 0 ? 0.03 : 0.012);
+    this.rollGain.gain.setTargetAtTime(0.26 * Math.pow(v, 1.3), ctx.currentTime, v > 0 ? 0.03 : 0.012);
     this.rollTone.frequency.setTargetAtTime(280 + 620 * v, ctx.currentTime, 0.04);
   }
 
@@ -133,8 +134,8 @@ export class Sound {
   slide(): void {
     const ctx = this.ready;
     if (!ctx) return;
-    this.hiss(ctx, 'lowpass', 520, 0.16, 0.22, 0.6);
-    this.hiss(ctx, 'bandpass', 1900, 0.03, 0.2, 0.5);
+    this.hiss(ctx, 'lowpass', 520, 0.5, 0.22, 0.6);
+    this.hiss(ctx, 'bandpass', 1900, 0.08, 0.2, 0.5);
   }
 
   /** 通关：几声往上走的铃音，星越多响得越多 */

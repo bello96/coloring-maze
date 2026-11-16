@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bestOf, emptyProgress, isUnlocked, readProgress, record, writeProgress } from '../src/game/progress.ts';
+import { bestOf, emptyProgress, isUnlocked, mergeProgress, readProgress, record, writeProgress } from '../src/game/progress.ts';
 import { starsFor } from '../src/game/stars.ts';
 import { swipeDir } from '../src/ui/swipe.ts';
 
@@ -110,6 +110,35 @@ describe('progress', () => {
     const p = readProgress('{"best":[5,6,7,8],"last":1,"muted":false}', 2);
     expect(bestOf(p, 1)).toBe(6);
     expect(bestOf(p, 2)).toBe(0);
+  });
+});
+
+describe('mergeProgress', () => {
+  // 同一个游戏开在两个标签页里：各自存档时要把对方存下的成绩合进来，不能整份盖掉
+  it('keeps the better result of the two for every level', () => {
+    const mine = { best: [5, 9, 0, 4], last: 1, muted: false };
+    const theirs = { best: [7, 6, 0, 4], last: 3, muted: true };
+    expect(mergeProgress(mine, theirs).best).toEqual([5, 6, 0, 4]);
+  });
+
+  it('takes a result that only one side has', () => {
+    const mine = { best: [5, 0, 8, 0], last: 0, muted: false };
+    const theirs = { best: [0, 6, 0, 0], last: 0, muted: false };
+    expect(mergeProgress(mine, theirs).best).toEqual([5, 6, 8, 0]);
+  });
+
+  it('keeps where this tab is and whether this tab is muted', () => {
+    const mine = { best: [5, 0], last: 1, muted: true };
+    const theirs = { best: [5, 0], last: 0, muted: false };
+    expect(mergeProgress(mine, theirs)).toMatchObject({ last: 1, muted: true });
+  });
+
+  it('does not change either of the two it was given', () => {
+    const mine = { best: [5, 9], last: 0, muted: false };
+    const theirs = { best: [7, 6], last: 0, muted: false };
+    mergeProgress(mine, theirs);
+    expect(mine.best).toEqual([5, 9]);
+    expect(theirs.best).toEqual([7, 6]);
   });
 });
 

@@ -141,3 +141,34 @@ describe('analyze agrees with trying every possible game', () => {
     });
   }
 });
+
+describe('analyze: mazes where the ball can stop in 33 or more places', () => {
+  // 求解器把"停在哪"和一半的关键格挤在同一个 32 位整数里，停靠点到第 33 个时会用到符号位。
+  // 随机迷宫里这样的极少（五十万个里十几个），所以把找到的几个固定下来。
+  // 每个的最少步数都是用穷举法（tests/helpers/brute.ts）算出来的。
+  const cases: Array<{ rows: string[]; par: number; stops: number }> = [
+    { rows: ['..#...#', '#......', 'S.##...', '#....#.', '..#...#', '....#..', '...#...'], par: 32, stops: 33 },
+    { rows: ['....#......#.', '.......#.S...', '#....#..#....', '...#....#.##.'], par: 32, stops: 33 },
+    { rows: ['...#......', '.....S...#', '#...#..#..', '..#..#....', '..#..#..#.'], par: 30, stops: 35 },
+    { rows: ['...#....#....', '.....S...#...', '............#', '..#....##....'], par: 24, stops: 33 },
+    { rows: ['.....##.', '...#....', '#....#..', '..#....#', '...##.S.', '...#...#'], par: 28, stops: 33 },
+    { rows: ['....#..', '...#...', '#....#.', '..#...#', '.......', '.....S.', '.#.....'], par: 26, stops: 33 },
+    { rows: ['......#.....#', '#.#........#.', '#......#.S...', '...#........#'], par: 24, stops: 33 },
+    { rows: ['..#...#...', '...#.....#', '.....#....', '..S.......', '....#.....'], par: 25, stops: 33 },
+  ];
+
+  it.each(cases)('finds the $par-step route through $rows', ({ rows, par, stops }) => {
+    const level = parseLevel(rows);
+    const a = analyze(level);
+    expect(a.stops).toBe(stops);
+    expect(a.par).toBe(par);
+    expect(replay(level, a.solution)).toBe(par);
+  });
+
+  it.each(cases.slice(0, 4))('agrees with trying every possible game on $rows', ({ rows, par }) => {
+    const level = parseLevel(rows);
+    const truth = bruteForce(level, 600_000);
+    expect(truth.par).toBe(par);
+    expect(analyze(level).safe && truth.canGetStuck).toBe(false);
+  });
+});

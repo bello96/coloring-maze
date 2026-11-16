@@ -33,6 +33,8 @@ body {
   overflow: hidden;
   background: var(--table);
   overscroll-behavior: none;
+  /* 面板里可以上下滑，但哪里都不能双指缩放、双击放大 */
+  touch-action: pan-x pan-y;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;

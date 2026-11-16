@@ -40,5 +40,14 @@ export function listen(surface: HTMLElement, onDir: (dir: Dir) => void): void {
   surface.addEventListener('pointerup', lift);
   surface.addEventListener('pointercancel', lift);
   // 微信等内置浏览器里，往下滑会把整个网页拽下来；在游戏画面上不要这个效果
-  surface.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  surface.addEventListener(
+    'touchmove',
+    (e) => {
+      // 浏览器已经开始自己处理这次触摸时拦不住，硬拦只会在控制台里报一条错
+      if (e.cancelable) e.preventDefault();
+    },
+    { passive: false },
+  );
+  // iPhone 上双指一捏会把整个页面放大（它不理会页面里"禁止缩放"的声明），放大后在游戏画面上又捏不回去
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
 }

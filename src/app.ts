@@ -1,9 +1,10 @@
 import { Sound } from './audio/sound.ts';
 import { parseLevel, type Dir, type Level } from './game/level.ts';
 import { LEVELS } from './game/levels.ts';
-import { bestOf, isUnlocked, readProgress, record, writeProgress, type Progress } from './game/progress.ts';
+import { bestOf, isUnlocked, mergeProgress, readProgress, record, writeProgress, type Progress } from './game/progress.ts';
 import { isDone, newGame, roll, steps, undo, type Game } from './game/rules.ts';
 import { starsFor } from './game/stars.ts';
+import { showBroken } from './ui/broken.ts';
 import { Hud } from './ui/hud.ts';
 import { listen } from './ui/input.ts';
 import { dyeCss, dyeOf } from './view/dyes.ts';
@@ -62,6 +63,10 @@ export class App {
       if (e.target instanceof Element && e.target.closest('.chip, .tile')) this.sound.tap();
     });
     window.addEventListener('resize', () => this.relayout(false));
+    // 切到别的标签页时画面会停住；要是弹珠正滚到一半，滚动的沙沙声不能跟着一直响下去
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.sound.rolling(0);
+    });
   }
 
   /** 木纹和字体都备好之后调用：亮出界面，摆上上次玩到的那一关 */
@@ -77,6 +82,8 @@ export class App {
 
   private save(): void {
     try {
+      // 存之前先把已经存着的读回来合一下：另一个标签页可能刚存过，不能整份盖掉
+      this.progress = mergeProgress(this.progress, readProgress(localStorage.getItem(STORAGE_KEY), LEVELS.length));
       localStorage.setItem(STORAGE_KEY, writeProgress(this.progress));
     } catch {
       // 存不了（比如无痕模式）就不存，不影响玩
@@ -98,7 +105,13 @@ export class App {
     this.hud.setLevel(LEVELS[index].par, dyeCss(index));
     this.hud.setSteps(0);
     this.relayout(true);
-    await this.view.enter(this.level, index + 1, dyeOf(index));
+    try {
+      await this.view.enter(this.level, index + 1, dyeOf(index));
+    } catch (err) {
+      // 托盘建不出来（比如手机上内存不够了）：停在这里并说明，而不是从此按什么都没反应
+      showBroken(err);
+      return;
+    }
     if (this.game !== game) return;
     this.phase = 'playing';
   }
@@ -147,8 +160,10 @@ export class App {
     this.queue = [];
     this.progress = record(this.progress, this.index, used);
     this.save();
+    // 最后一步还在滚的时候可能已经点开了选关面板：让它马上显示刚得的星、打开下一关
+    if (this.hud.levelsOpen) this.openLevels();
     this.sound.win(starsFor(used, par));
-    await this.view.celebrate();
+    await this.view.celebrate(game.pos);
     if (this.game !== game) return;
     this.hud.showResult({ steps: used, par, best: bestOf(this.progress, this.index), hasNext: this.index + 1 < LEVELS.length });
     this.relayout(true);
