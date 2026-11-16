@@ -1,17 +1,20 @@
-// 生成 30 关并写进 src/game/levels.ts。
+// 生成 50 关并写进 src/game/levels.ts。
 //
-//   node tools/build-levels.ts            先给每个尺寸造一大批候选，再按难度曲线挑 30 关
+//   node tools/build-levels.ts            先给每个尺寸造一大批候选，再按难度曲线挑 50 关
 //   node tools/build-levels.ts pool 9     只造 9×9 的候选（几个尺寸可以同时各开一个窗口跑）
 //   node tools/build-levels.ts pick       只重新挑选（用已经造好的候选）
 //
 // 候选存在 node_modules/.cache/coloring-maze/ 里，种子固定，所以重跑得到的是同一批。
+// 15×15 的候选求解起来慢得多，会自动分给多个线程一起算（怎么分是固定的，和电脑有几个核无关）。
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { parseLevel } from '../src/game/level.ts';
-import { analyze, SolverLimitError } from '../src/game/solver.ts';
+import { analyze, SolverLimitError, type Engine } from '../src/game/solver.ts';
 import { seeded } from '../tests/helpers/random.ts';
-import { blocks, carve, greedySteps, shapeOk, type Rand } from './gen.ts';
+import { blocks, carve, greedySteps, mend, shapeOk, type Rand } from './gen.ts';
 
 type Style = 'carve' | 'blocks' | 'sym';
 
@@ -31,9 +34,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = path.join(ROOT, 'node_modules', '.cache', 'coloring-maze');
 
 /** 每个尺寸试多少次。大尺寸的好候选很稀少，要多试。 */
-const TRIES: Record<number, number> = { 5: 30_000, 6: 40_000, 7: 50_000, 8: 50_000, 9: 60_000, 10: 60_000 };
-/** 求解一个候选最多搜多少局面，超过就放弃这个候选 */
+const TRIES: Record<number, number> = { 5: 30_000, 6: 40_000, 7: 50_000, 8: 50_000, 9: 60_000, 10: 60_000, 15: 48_000 };
+/** 求解一个候选最多搜多少局面，超过就放弃这个候选。大图用的搜法每个局面占的内存多，又是十几个线程一起算，所以少给一些。 */
 const SEARCH_LIMIT = 6_000_000;
+const SEARCH_LIMIT_BIG = 2_000_000;
+/** 15×15 的候选分成固定的这么多份，各用各的种子，可以同时算 */
+const SHARDS = 16;
+/** 从这个尺寸起算"大图"：换一套造法和搜法（见 makeBig 和求解器的 Engine） */
+const BIG = 15;
 
 const hashRows = (rows: string[]): number => {
   let h = 2166136261;
@@ -42,6 +50,7 @@ const hashRows = (rows: string[]): number => {
 };
 
 function makeOne(rand: Rand, n: number): { rows: string[]; style: Style } | null {
+  if (n >= BIG) return makeBig(rand, n);
   const kind = rand();
   if (kind < 0.4) {
     const moves = 3 + Math.floor(rand() * (n * 3 - 2));
@@ -54,11 +63,29 @@ function makeOne(rand: Rand, n: number): { rows: string[]; style: Style } | null
   return rows ? { rows, style: symmetric ? 'sym' : 'blocks' } : null;
 }
 
-function buildPool(n: number): Candidate[] {
-  const rand = seeded(n * 7919 + 20261116);
+/** 大图：开凿要凿得久得多才铺得开；摆木块改用"修补"，随机摆的通不了关 */
+function makeBig(rand: Rand, n: number): { rows: string[]; style: Style } | null {
+  const kind = rand();
+  if (kind < 0.4) {
+    const moves = n * 3 + Math.floor(rand() * n * 8);
+    const made = carve(rand, n, moves, Math.floor(rand() * 4));
+    return made ? { rows: made.rows, style: 'carve' } : null;
+  }
+  const symmetric = kind >= 0.6;
+  const pieces = Math.round(n * (0.7 + rand() * 2));
+  const rows = mend(rand, n, pieces, symmetric);
+  return rows ? { rows, style: symmetric ? 'sym' : 'blocks' } : null;
+}
+
+/**
+ * 试 tries 次，把合格的候选收集起来。
+ * @param engine 小图一直是用"一层层全搜"筛的，换了搜法筛出来的就不是原来那一批了，所以照旧
+ */
+function collect(n: number, seed: number, tries: number, engine: Engine, label: string): { list: Candidate[]; limited: number } {
+  const rand = seeded(seed);
   const seen = new Set<string>();
   const out: Candidate[] = [];
-  const tries = TRIES[n];
+  const big = n >= BIG;
   const t0 = performance.now();
   let limited = 0;
   for (let i = 0; i < tries; i++) {
@@ -71,9 +98,11 @@ function buildPool(n: number): Candidate[] {
     if (!level) continue;
     const open = level.floorCount / (n * n);
     if (open > 0.9) continue;
+    // 大图只留用得上的：太挤的、步数还不如 10×10 的都不要（省下估 gap 的时间）
+    if (big && open < 0.55) continue;
     try {
-      const a = analyze(level, SEARCH_LIMIT);
-      if (!a.solvable || !a.safe || a.par < 3) continue;
+      const a = analyze(level, big ? SEARCH_LIMIT_BIG : SEARCH_LIMIT, engine);
+      if (!a.solvable || !a.safe || a.par < (big ? 30 : 3)) continue;
       const judge = seeded(hashRows(made.rows));
       let total = 0;
       const runs = 30;
@@ -91,21 +120,64 @@ function buildPool(n: number): Candidate[] {
       if (!(err instanceof SolverLimitError)) throw err;
       limited++;
     }
-    if (i % 5000 === 4999) {
-      console.log(`  ${n}×${n}: ${i + 1}/${tries} 次，候选 ${out.length} 个，${((performance.now() - t0) / 1000).toFixed(0)} 秒`);
+    if (!big && i % 5000 === 4999) {
+      console.log(`  ${label}: ${i + 1}/${tries} 次，候选 ${out.length} 个，${((performance.now() - t0) / 1000).toFixed(0)} 秒`);
     }
   }
-  console.log(`${n}×${n}: 候选 ${out.length} 个（另有 ${limited} 个太复杂放弃），用时 ${((performance.now() - t0) / 1000).toFixed(0)} 秒`);
-  return out;
+  return { list: out, limited };
 }
 
-const poolFile = (n: number): string => path.join(CACHE, `pool-${n}-${TRIES[n]}-${SEARCH_LIMIT}.json`);
+function buildPool(n: number): Candidate[] {
+  const t0 = performance.now();
+  const { list, limited } = collect(n, n * 7919 + 20261116, TRIES[n], 'breadth', `${n}×${n}`);
+  console.log(`${n}×${n}: 候选 ${list.length} 个（另有 ${limited} 个太复杂放弃），用时 ${((performance.now() - t0) / 1000).toFixed(0)} 秒`);
+  return list;
+}
 
-function loadPool(n: number, build: boolean): Candidate[] {
+/** 大图的候选：分成 SHARDS 份，几个线程分着算，最后按份的顺序拼起来（所以结果和线程数无关） */
+async function buildBigPool(n: number): Promise<Candidate[]> {
+  const t0 = performance.now();
+  const parts: Array<{ list: Candidate[]; limited: number }> = new Array(SHARDS);
+  let next = 0;
+  let finished = 0;
+  const workers = Math.max(1, Math.min(SHARDS, availableParallelism() - 2));
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      while (next < SHARDS) {
+        const shard = next++;
+        parts[shard] = await new Promise((resolve, reject) => {
+          const worker = new Worker(fileURLToPath(import.meta.url), { workerData: { n, shard } });
+          worker.once('message', resolve);
+          worker.once('error', reject);
+        });
+        finished++;
+        console.log(`  ${n}×${n}: 第 ${finished}/${SHARDS} 份算完，${((performance.now() - t0) / 1000).toFixed(0)} 秒`);
+      }
+    }),
+  );
+  const seen = new Set<string>();
+  const list: Candidate[] = [];
+  let limited = 0;
+  for (const part of parts) {
+    limited += part.limited;
+    for (const c of part.list) {
+      const id = c.rows.join('/');
+      if (seen.has(id)) continue;
+      seen.add(id);
+      list.push(c);
+    }
+  }
+  console.log(`${n}×${n}: 候选 ${list.length} 个（另有 ${limited} 个太复杂放弃），用时 ${((performance.now() - t0) / 1000).toFixed(0)} 秒`);
+  return list;
+}
+
+const poolFile = (n: number): string => path.join(CACHE, `pool-${n}-${TRIES[n]}-${n >= BIG ? SEARCH_LIMIT_BIG : SEARCH_LIMIT}.json`);
+
+async function loadPool(n: number, build: boolean): Promise<Candidate[]> {
   const file = poolFile(n);
   if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8')) as Candidate[];
   if (!build) throw new Error(`还没有 ${n}×${n} 的候选，先运行 node tools/build-levels.ts pool ${n}`);
-  const pool = buildPool(n);
+  const pool = n >= BIG ? await buildBigPool(n) : buildPool(n);
   mkdirSync(CACHE, { recursive: true });
   writeFileSync(file, JSON.stringify(pool));
   return pool;
@@ -152,6 +224,28 @@ const PLAN: Slot[] = [
   { n: 10, par: [31, 31], gap: 12 },
   { n: 10, par: [32, 33], gap: 14 },
   { n: 10, par: [34, 40], gap: 16 },
+  // 31–50 关：换成 15×15。最少步数和 gap 都从第 30 关往上接，所以每一关都比第 30 关难。
+  // 前一半是凿出来的大迷宫（开阔的图在 15×15 上起码要五十多步），后一半是要想得很远的开阔图。
+  { n: 15, par: [36, 36], gap: 17 },
+  { n: 15, par: [37, 37], gap: 18 },
+  { n: 15, par: [38, 38], gap: 18 },
+  { n: 15, par: [39, 40], gap: 19 },
+  { n: 15, par: [41, 42], gap: 19 },
+  { n: 15, par: [43, 44], gap: 20 },
+  { n: 15, par: [45, 46], gap: 20 },
+  { n: 15, par: [47, 48], gap: 21 },
+  { n: 15, par: [49, 51], gap: 22 },
+  { n: 15, par: [52, 54], gap: 23 },
+  { n: 15, par: [55, 56], gap: 25 },
+  { n: 15, par: [57, 58], gap: 26 },
+  { n: 15, par: [59, 60], gap: 28 },
+  { n: 15, par: [61, 62], gap: 30 },
+  { n: 15, par: [63, 64], gap: 32 },
+  { n: 15, par: [65, 66], gap: 34 },
+  { n: 15, par: [67, 68], gap: 36 },
+  { n: 15, par: [69, 70], gap: 38 },
+  { n: 15, par: [71, 73], gap: 40 },
+  { n: 15, par: [74, 80], gap: 44 },
 ];
 
 /** 两个同尺寸的迷宫有多少格不一样（占比） */
@@ -194,6 +288,22 @@ function pick(pools: Map<number, Candidate[]>): Candidate[] {
   return chosen;
 }
 
+/**
+ * 大图的最少步数只有一种搜法算得动，没有别的办法可以核对。能做的是把关键格换两种分法各再算一遍：
+ * 分法不同，搜索时用的下界就完全不同，算出来的最少步数却必须一样。对不上就不往下写。
+ */
+function confirm(levels: Candidate[]): void {
+  const t0 = performance.now();
+  levels.forEach((c, i) => {
+    if (c.rows.length < BIG) return;
+    for (const groupSize of [14, 12]) {
+      const a = analyze(parseLevel(c.rows), 40_000_000, 'guided', groupSize);
+      if (a.par !== c.par) throw new Error(`第 ${i + 1} 关：关键格 ${groupSize} 个一组算出来最少 ${a.par} 步，和原来的 ${c.par} 步对不上`);
+    }
+  });
+  console.log(`15×15 的每一关都换了两种分组重算过，最少步数一致（${((performance.now() - t0) / 1000).toFixed(0)} 秒）`);
+}
+
 function write(levels: Candidate[]): void {
   const lines: string[] = [
     '// 这个文件由 tools/build-levels.ts 生成（npm run levels），不要手改。',
@@ -216,13 +326,16 @@ function write(levels: Candidate[]): void {
   writeFileSync(path.join(ROOT, 'src', 'game', 'levels.ts'), lines.join('\n'));
 }
 
-const [command, arg] = process.argv.slice(2);
-const SIZES = [5, 6, 7, 8, 9, 10];
-if (command === 'pool') {
-  for (const n of arg ? [Number(arg)] : SIZES) loadPool(n, true);
-} else {
+const SIZES = [5, 6, 7, 8, 9, 10, 15];
+
+async function main(): Promise<void> {
+  const [command, arg] = process.argv.slice(2);
+  if (command === 'pool') {
+    for (const n of arg ? [Number(arg)] : SIZES) await loadPool(n, true);
+    return;
+  }
   const pools = new Map<number, Candidate[]>();
-  for (const n of SIZES) pools.set(n, loadPool(n, command !== 'pick'));
+  for (const n of SIZES) pools.set(n, await loadPool(n, command !== 'pick'));
   for (const n of SIZES) {
     const pool = pools.get(n)!;
     const pars = new Map<number, number>();
@@ -231,6 +344,7 @@ if (command === 'pool') {
     console.log(`${n}×${n} 候选 ${pool.length} 个，按最少步数分布 ${list.join(' ')}`);
   }
   const levels = pick(pools);
+  confirm(levels);
   write(levels);
   levels.forEach((c, i) => {
     const level = parseLevel(c.rows);
@@ -238,4 +352,12 @@ if (command === 'pool') {
       `第 ${String(i + 1).padStart(2)} 关 ${level.rows}×${level.cols} ${c.style.padEnd(6)} 最少 ${String(c.par).padStart(2)} 步  gap ${c.gap.toFixed(1).padStart(5)}  地面 ${Math.round(c.open * 100)}%  停靠点 ${c.stops}`,
     );
   });
+}
+
+if (isMainThread) {
+  await main();
+} else {
+  // 线程里：算自己那一份候选，交回去
+  const { n, shard } = workerData as { n: number; shard: number };
+  parentPort!.postMessage(collect(n, n * 7919 + 20261116 + (shard + 1) * 1_000_003, TRIES[n] / SHARDS, 'guided', `${n}×${n}`));
 }

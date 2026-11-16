@@ -1,8 +1,9 @@
-// 关卡生成用到的零件：两种造迷宫的办法、迷宫的检查、以及"普通玩法要走几步"的估计。
+// 关卡生成用到的零件：三种造迷宫的办法、迷宫的检查、以及"普通玩法要走几步"的估计。
 // 这里的东西只在生成关卡时用（npm run levels），不会打进游戏里。
 import { DIRS, STEP, parseLevel, type Dir, type Level } from '../src/game/level.ts';
 import { isDone, newGame, roll, slide, steps } from '../src/game/rules.ts';
 import { floorConnected, hasPinch } from '../src/game/shape.ts';
+import { shortfall } from '../src/game/solver.ts';
 
 export type Rand = () => number;
 
@@ -133,6 +134,75 @@ export function blocks(rand: Rand, n: number, pieces: number, symmetric: boolean
   });
   if (floors.length < n * n * 0.5) return null;
   return toRows(floor, n, pick(rand, floors));
+}
+
+/**
+ * 造法三"修补"：给 15×15 这样的大图用。图一大，随机摆出来的木块几乎不可能正好通得了关
+ * （两千张里也就一两张），所以摆完之后接着改：随便挑一格，墙改成地面或者地面改成墙，
+ * 只要离"保证不会困死"没有变得更远（见求解器的 shortfall）就留下，否则改回去；偶尔也换个起点试试。
+ * 改到差距为 0 就得到一张一定能通关、也不会困死的图。
+ * @param symmetric 是否始终保持中心对称
+ * @param patience 最多改多少次，还不行就放弃
+ */
+export function mend(rand: Rand, n: number, pieces: number, symmetric: boolean, patience = 4000): string[] | null {
+  const floor = new Uint8Array(n * n).fill(1);
+  const mate = (cell: number): number => (symmetric ? n * n - 1 - cell : cell);
+  for (let p = 0; p < pieces; p++) {
+    const shape = pick(rand, PIECES);
+    const r0 = int(rand, 0, n - 1);
+    const c0 = int(rand, 0, n - 1);
+    for (const [dr, dc] of shape) {
+      const r = r0 + dr;
+      const c = c0 + dc;
+      if (r >= n || c >= n) continue;
+      floor[r * n + c] = 0;
+      floor[mate(r * n + c)] = 0;
+    }
+  }
+  // 地面占五成五到八成五：再少就成了走廊，再多就空得没什么可想的
+  const shapely = (): Level | null => {
+    let floorCount = 0;
+    for (const v of floor) floorCount += v;
+    if (floorCount < n * n * 0.55 || floorCount > n * n * 0.85) return null;
+    if (hasPinch(floor, n, n) || !floorConnected(floor, n, n)) return null;
+    return { rows: n, cols: n, floor, start: 0, floorCount };
+  };
+  let board = shapely();
+  if (!board) return null;
+  const floors: number[] = [];
+  floor.forEach((v, i) => {
+    if (v) floors.push(i);
+  });
+  let start = pick(rand, floors);
+  /** 现在这张图离"保证不会困死"还差多少 */
+  let lack = shortfall({ ...board, start });
+  for (let i = 0; i < patience && lack > 0; i++) {
+    const cell = int(rand, 0, n * n - 1);
+    if (rand() < 0.08) {
+      if (!floor[cell] || cell === start) continue;
+      const next = shortfall({ ...board, start: cell });
+      if (next <= lack) {
+        lack = next;
+        start = cell;
+      }
+      continue;
+    }
+    const other = mate(cell);
+    if (cell === start || other === start) continue;
+    const was = floor[cell];
+    const wasOther = floor[other];
+    floor[cell] = floor[other] = was ? 0 : 1;
+    const changed = shapely();
+    const next = changed ? shortfall({ ...changed, start }) : Infinity;
+    if (changed && next <= lack) {
+      lack = next;
+      board = changed;
+    } else {
+      floor[cell] = was;
+      floor[other] = wasOther;
+    }
+  }
+  return lack === 0 ? toRows(floor, n, start) : null;
 }
 
 /**
