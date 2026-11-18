@@ -35,6 +35,24 @@
       </button>
     </nav>
 
+    <aside class="guide" id="guide" hidden>
+      <div class="guide-how">
+        <div class="guide-keys" aria-hidden="true">
+          <kbd class="key"><svg viewBox="0 0 24 24"><path d="M12 5.5l7.5 12h-15z" /></svg></kbd>
+          <kbd class="key"><svg viewBox="0 0 24 24"><path d="M5.5 12l12-7.5v15z" /></svg></kbd>
+          <kbd class="key"><svg viewBox="0 0 24 24"><path d="M12 18.5l-7.5-12h15z" /></svg></kbd>
+          <kbd class="key"><svg viewBox="0 0 24 24"><path d="M18.5 12l-12 7.5v-15z" /></svg></kbd>
+        </div>
+        <svg class="guide-swipe" viewBox="0 0 48 48" aria-hidden="true">
+          <circle cx="24" cy="24" r="7" />
+          <path d="M24 3l6.5 8h-13zM24 45l-6.5-8h13zM3 24l8-6.5v13zM45 24l-8 6.5v-13z" />
+        </svg>
+        <p class="guide-lead"><span class="by-keys">方向键控制小球</span><span class="by-touch">滑动屏幕控制小球</span></p>
+      </div>
+      <p>小球会一直滚到撞墙才停</p>
+      <p>把所有格子都染上色就过关</p>
+    </aside>
+
     <section class="result" id="result" hidden aria-live="polite">
       <div class="stars" id="result-stars" role="img"></div>
       <h2 id="result-title"></h2>

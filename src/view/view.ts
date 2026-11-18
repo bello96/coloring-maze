@@ -2,11 +2,10 @@ import * as THREE from 'three';
 import { STEP, type Dir, type Level } from '../game/level.ts';
 import type { Move } from '../game/rules.ts';
 import { Drops } from './drops.ts';
-import { OUTER } from './dims.ts';
 import { Marble } from './marble.ts';
 import { rollProfile, settle } from './motion.ts';
 import { Governor, isModestGpu, sharpnessFor } from './sharpness.ts';
-import { Stage, type Insets } from './stage.ts';
+import { SQUARE, Stage, type Extent, type Insets } from './stage.ts';
 import { Tray } from './tray.ts';
 import { Waits } from './waits.ts';
 
@@ -33,10 +32,16 @@ const SLIDE = 27;
 /** 没有动画之后还要继续画多久：刚滚过的地方是湿的，要等它慢慢干 */
 const LINGER = 6;
 
-/** 弹珠滚动时托盘朝那个方向倾斜多少（弧度）：像是有人把托盘的一边稍稍抬起来让球滚 */
-const TILT = 0.034;
-/** 倾斜和放平要多久（秒，越小越快） */
-const TILT_TIME = 0.05;
+/**
+ * 弹珠滚动时托盘朝那个方向倾斜多少（弧度）：像是有人把托盘的一边稍稍抬起来让球滚。
+ * 只要一点点（半度多一些，托盘边上抬起两三个像素）：再大的话每走一步整个画面都跟着晃，看着累。
+ */
+const TILT = 0.011;
+/**
+ * 倾斜和放平要多久（秒，越小越快）。
+ * 托盘在动的每一帧影子都要重画，所以不能拖得太久：幅度小了之后用 0.06，从抬起到放平用的帧数和原来差不多。
+ */
+const TILT_TIME = 0.06;
 
 interface Board {
   readonly tray: Tray;
@@ -69,9 +74,12 @@ export class GameView {
   /** 上一帧之后有没有接着排下一帧（连续出画面） */
   private streak = false;
   private readonly scratch = new THREE.Vector3();
-  /** 现在取景时四边留出的地方 */
-  private insets: Insets | null = null;
-  private layoutToken = 0;
+  /** 取景最后要变成的样子：四边留出多少地方给界面、要放进去的托盘有多大 */
+  private aimSafe: Insets | null = null;
+  private aimBox: Extent = SQUARE;
+  /** 现在的取景（正在平滑移动的话，是移到一半的样子） */
+  private shot: { safe: Insets; box: Extent } | null = null;
+  private aimToken = 0;
   private size = { width: 0, height: 0, device: 0 };
   /** 一帧最多画多少个点：看显卡的档次定 */
   private readonly budget: number;
@@ -106,9 +114,7 @@ export class GameView {
     const dt = Math.min(0.05, Math.max(0, elapsed));
     this.lastFrame = t;
     // 只在连续出画面的时候量速度：停了一阵再醒过来的第一帧不算
-    if (this.streak && this.governor.frame(elapsed) && this.insets) {
-      this.stage.resize(this.size.width, this.size.height, this.governor.ratio, this.insets);
-    }
+    if (this.streak && this.governor.frame(elapsed)) this.applyShot();
     this.streak = true;
 
     while (this.timers.length > 0 && this.timers[0].at <= t) this.timers.shift()!.run();
@@ -134,7 +140,7 @@ export class GameView {
         tilting = true;
       }
       b.tray.group.rotation.set(tilt.x, 0, -tilt.z);
-      b.tray.group.position.y = (OUTER / 2) * (Math.abs(Math.sin(tilt.x)) + Math.abs(Math.sin(tilt.z)));
+      b.tray.group.position.y = (b.tray.depth / 2) * Math.abs(Math.sin(tilt.x)) + (b.tray.width / 2) * Math.abs(Math.sin(tilt.z));
       const at = b.tray.group.position;
       pose += `${at.x},${at.z},${tilt.x},${tilt.z};`;
       b.tray.stain.uniforms.uTime.value = t;
@@ -197,28 +203,52 @@ export class GameView {
    * @param glide 不是一下子跳过去，而是用不到半秒的时间平滑地移过去（界面多出一块面板时用）
    */
   layout(width: number, height: number, safe: Insets, glide: boolean): void {
-    const from = this.insets;
-    const token = ++this.layoutToken;
     const device = window.devicePixelRatio || 1;
     if (width !== this.size.width || height !== this.size.height || device !== this.size.device) {
       // 画面大小变了：画多细重新定（见 sharpness.ts），带不动的话再由 governor 往下调
       this.size = { width, height, device };
       this.governor = new Governor(sharpnessFor(width, height, device, this.budget));
     }
-    if (!glide || !from || (from.left === safe.left && from.right === safe.right && from.top === safe.top && from.bottom === safe.bottom)) {
-      this.insets = safe;
-      this.stage.resize(width, height, this.governor.ratio, safe);
+    this.aimSafe = safe;
+    this.reframe(glide ? 0.42 : 0);
+  }
+
+  /** 把取景移到 aimSafe、aimBox 那里去：duration 秒内平滑地移过去，0 就是一下子跳过去 */
+  private reframe(duration: number): void {
+    const safe = this.aimSafe;
+    if (!safe) return;
+    const box = this.aimBox;
+    const from = this.shot;
+    const token = ++this.aimToken;
+    const same =
+      from !== null &&
+      from.safe.left === safe.left &&
+      from.safe.right === safe.right &&
+      from.safe.top === safe.top &&
+      from.safe.bottom === safe.bottom &&
+      from.box.halfWidth === box.halfWidth &&
+      from.box.halfDepth === box.halfDepth;
+    if (duration <= 0 || !from || same) {
+      this.shot = { safe, box };
+      this.applyShot();
       this.wake();
       return;
     }
-    void this.tween(0.42, (k) => {
+    void this.tween(duration, (k) => {
       // 中途又来了一次新的取景，这一次就作废
-      if (token !== this.layoutToken) return;
+      if (token !== this.aimToken) return;
       const e = easeInOut(k);
       const mix = (a: number, b: number): number => a + (b - a) * e;
-      this.insets = { left: mix(from.left, safe.left), right: mix(from.right, safe.right), top: mix(from.top, safe.top), bottom: mix(from.bottom, safe.bottom) };
-      this.stage.resize(width, height, this.governor.ratio, this.insets);
+      this.shot = {
+        safe: { left: mix(from.safe.left, safe.left), right: mix(from.safe.right, safe.right), top: mix(from.safe.top, safe.top), bottom: mix(from.safe.bottom, safe.bottom) },
+        box: { halfWidth: mix(from.box.halfWidth, box.halfWidth), halfDepth: mix(from.box.halfDepth, box.halfDepth) },
+      };
+      this.applyShot();
     });
+  }
+
+  private applyShot(): void {
+    if (this.shot) this.stage.resize(this.size.width, this.size.height, this.governor.ratio, this.shot.safe, this.shot.box);
   }
 
   /** 界面上的木片要用的两种木纹图片 */
@@ -246,6 +276,9 @@ export class GameView {
     if (old) old.tilt.toX = old.tilt.toZ = 0;
     this.board = next;
     this.stage.board.add(tray.group);
+    // 新托盘的大小可能和旧的不一样（长方形的关卡）：趁着换托盘，把镜头也移到正好装下新托盘的地方
+    this.aimBox = { halfWidth: tray.width / 2, halfDepth: tray.depth / 2 };
+    this.reframe(old ? 0.9 : 0);
 
     if (old) {
       this.leaving = old;

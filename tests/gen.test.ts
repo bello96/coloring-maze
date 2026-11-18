@@ -10,7 +10,7 @@ function mended(seed: number, n: number, count: number, symmetric: boolean): str
   const rand = seeded(seed);
   const out: string[][] = [];
   for (let i = 0; i < 4000 && out.length < count; i++) {
-    const rows = mend(rand, n, Math.round(n * (0.7 + rand() * 2)), symmetric);
+    const rows = mend(rand, n, n, Math.round(n * (0.7 + rand() * 2)), symmetric);
     if (rows) out.push(rows);
   }
   expect(out).toHaveLength(count);

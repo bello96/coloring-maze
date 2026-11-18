@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 import type { Level } from '../game/level.ts';
-import { FLOOR_SIZE } from './dims.ts';
-
 /** "从来没有"：比任何时刻都晚 */
 const NEVER = 1e9;
 /** 墙在数据里的记号 */
@@ -22,6 +20,8 @@ export class Stain {
   readonly uniforms: {
     uCells: { value: THREE.DataTexture };
     uGrid: { value: THREE.Vector2 };
+    /** 底板左右多宽、前后多深（世界单位） */
+    uFloor: { value: THREE.Vector2 };
     uTime: { value: number };
     uDye: { value: THREE.Color };
     /** 弹珠的球心（托盘自己的坐标）和半径；半径为 0 表示现在没有弹珠 */
@@ -33,7 +33,7 @@ export class Stain {
   private readonly texture: THREE.DataTexture;
   private readonly level: Level;
 
-  constructor(level: Level, dye: THREE.Color, sun: THREE.Vector3) {
+  constructor(level: Level, dye: THREE.Color, sun: THREE.Vector3, floorWidth: number, floorDepth: number) {
     this.level = level;
     const count = level.rows * level.cols;
     this.data = new Float32Array(count * 4);
@@ -44,6 +44,7 @@ export class Stain {
     this.uniforms = {
       uCells: { value: this.texture },
       uGrid: { value: new THREE.Vector2(level.cols, level.rows) },
+      uFloor: { value: new THREE.Vector2(floorWidth, floorDepth) },
       uTime: { value: 0 },
       uDye: { value: dye.clone() },
       uBall: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -99,21 +100,23 @@ export class Stain {
   patch(material: THREE.MeshStandardMaterial): void {
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
+      // 格子的坐标从底板上的位置来算（0–1 铺满整块底板），不用贴图坐标：长方形的底板上木纹只铺了贴图的一截
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec2 vGridUv;')
-        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvGridUv = uv;');
+        .replace('#include <common>', '#include <common>\nuniform vec2 uFloor;\nvarying vec2 vGridUv;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvGridUv = position.xz / uFloor + 0.5;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${PARS}`)
         .replace('#include <map_fragment>', `#include <map_fragment>\n${COLOR}`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${ROUGHNESS}`);
     };
-    material.customProgramCacheKey = () => 'stain-v2';
+    material.customProgramCacheKey = () => 'stain-v3';
   }
 }
 
 const PARS = /* glsl */ `
 uniform sampler2D uCells;
 uniform vec2 uGrid;
+uniform vec2 uFloor;
 uniform float uTime;
 uniform vec3 uDye;
 uniform vec4 uBall;
@@ -212,7 +215,7 @@ const COLOR = /* glsl */ `
 
   // 玻璃弹珠的影子：玻璃不挡光而是把光聚拢，所以影子外圈暗、中间反而有一块亮斑
   if (uBall.w > 0.0) {
-    vec2 here = (vGridUv - 0.5) * ${FLOOR_SIZE.toFixed(1)};
+    vec2 here = (vGridUv - 0.5) * uFloor;
     vec2 along = normalize(uSun.xz);
     vec2 rel = here - (uBall.xz + uSun.xz * (uBall.y / -uSun.y));
     // 影子顺着光的方向被拉长，这里把它压回成圆再量距离

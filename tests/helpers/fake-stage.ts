@@ -1,6 +1,9 @@
 // 替身舞台：不碰 WebGL，只记下被调用了多少次。接口和 src/view/stage.ts 里的 Stage 一样。
 import * as THREE from 'three';
-import type { Insets } from '../../src/view/stage.ts';
+import type { Extent, Insets } from '../../src/view/stage.ts';
+
+/** 正方形托盘的大小（和真舞台里的一样：外边长 12.5 的一半） */
+export const SQUARE: Extent = { halfWidth: 6.25, halfDepth: 6.25 };
 
 export class Stage {
   readonly board = new THREE.Group();
@@ -8,7 +11,7 @@ export class Stage {
   renders = 0;
   /** 其中有多少帧重画了影子 */
   shadowRenders = 0;
-  readonly resizes: Array<{ width: number; height: number; pixelRatio: number; safe: Insets }> = [];
+  readonly resizes: Array<{ width: number; height: number; pixelRatio: number; safe: Insets; box: Extent }> = [];
   readonly assets: unknown;
 
   constructor(_canvas: unknown, font: string) {
@@ -27,8 +30,8 @@ export class Stage {
 
   setShadowReach(): void {}
 
-  resize(width: number, height: number, pixelRatio: number, safe: Insets): void {
-    this.resizes.push({ width, height, pixelRatio, safe: { ...safe } });
+  resize(width: number, height: number, pixelRatio: number, safe: Insets, box: Extent): void {
+    this.resizes.push({ width, height, pixelRatio, safe: { ...safe }, box: { ...box } });
   }
 
   render(trayMoved: boolean): void {

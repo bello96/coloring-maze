@@ -72,21 +72,8 @@ export function analyze(level: Level, maxStates = 4_000_000, engine: Engine = 'g
   // 每个地面格都得在某一步的路上，否则肯定染不到
   if (unreached(level, rolls) > 0) return unsolvable;
 
-  // 2. 关键格。先给每个格子记下"哪几步会染到它"，用一个大整数当集合。
-  const coveredBy: bigint[] = new Array(total).fill(0n);
-  rolls.forEach((r, i) => {
-    const bit = 1n << BigInt(i);
-    for (const cell of r.cells) coveredBy[cell] |= bit;
-  });
-  // 染到它的那几步完全相同的格子只留一个当代表
-  const distinct = new Map<bigint, number>();
-  for (let cell = 0; cell < total; cell++) {
-    if (level.floor[cell] && cell !== level.start && !distinct.has(coveredBy[cell])) distinct.set(coveredBy[cell], cell);
-  }
-  const sets = [...distinct.keys()];
-  // 如果能染到乙的每一步也都能染到甲，那么乙染上时甲必然已经染上，甲不用记
-  const keySets = sets.filter((a) => !sets.some((b) => b !== a && (a & b) === b));
-  const keyCells = keySets.map((set) => distinct.get(set)!);
+  // 2. 关键格
+  const { keySets, keyCells } = keysOf(level, rolls);
 
   // 3. 搜
   const path = engine === 'breadth' ? breadth(stops, rolls, rollsFrom, keySets, maxStates) : guided(total, stops, rolls, keyCells, maxStates, groupSize);
@@ -108,6 +95,55 @@ export function analyze(level: Level, maxStates = 4_000_000, engine: Engine = 'g
 export function shortfall(level: Level): number {
   const { stopCells, rolls, rollsFrom } = stopGraph(level);
   return unreached(level, rolls) + stuckBy(level, stopCells.length, rolls, rollsFrom);
+}
+
+/**
+ * 一关整理成一张图：停靠点、每一步，以及每个关键格由哪几步染到。
+ * "最少几步"就是在这张图上从起点出发、把每个关键格都至少染到一次的最短走法。
+ * 更大的图上的另一种解法（tools/mip.ts）从这里出发。
+ */
+export interface StepGraph {
+  /** 停靠点的个数；起点是第 0 个 */
+  readonly stops: number;
+  /** 每一步：从哪个停靠点、往哪个方向滚、停在哪个停靠点 */
+  readonly rolls: ReadonlyArray<{ readonly from: number; readonly to: number; readonly dir: Dir }>;
+  /** 每个关键格由哪几步染到（步的编号） */
+  readonly keys: ReadonlyArray<readonly number[]>;
+}
+
+/** 有格子怎么滚都染不到的话返回 null */
+export function stepGraph(level: Level): StepGraph | null {
+  const { stopCells, rolls } = stopGraph(level);
+  if (unreached(level, rolls) > 0) return null;
+  const keys = keysOf(level, rolls).keySets.map((set) => {
+    const list: number[] = [];
+    for (let i = 0; i < rolls.length; i++) if ((set >> BigInt(i)) & 1n) list.push(i);
+    return list;
+  });
+  return { stops: stopCells.length, rolls, keys };
+}
+
+/**
+ * 关键格：很多格子总是"顺带"被染上，不用单独记，剩下必须单独记的才是关键格。
+ * 返回每个关键格由哪几步染到（用一个大整数当集合，第 i 位代表第 i 步），和它是哪一格。
+ */
+function keysOf(level: Level, rolls: readonly Roll[]): { keySets: bigint[]; keyCells: number[] } {
+  const total = level.rows * level.cols;
+  // 先给每个格子记下"哪几步会染到它"
+  const coveredBy: bigint[] = new Array(total).fill(0n);
+  rolls.forEach((r, i) => {
+    const bit = 1n << BigInt(i);
+    for (const cell of r.cells) coveredBy[cell] |= bit;
+  });
+  // 染到它的那几步完全相同的格子只留一个当代表
+  const distinct = new Map<bigint, number>();
+  for (let cell = 0; cell < total; cell++) {
+    if (level.floor[cell] && cell !== level.start && !distinct.has(coveredBy[cell])) distinct.set(coveredBy[cell], cell);
+  }
+  const sets = [...distinct.keys()];
+  // 如果能染到乙的每一步也都能染到甲，那么乙染上时甲必然已经染上，甲不用记
+  const keySets = sets.filter((a) => !sets.some((b) => b !== a && (a & b) === b));
+  return { keySets, keyCells: keySets.map((set) => distinct.get(set)!) };
 }
 
 /** 从起点出发到得了的停靠点（起点是第 0 个），以及从每个停靠点往四个方向各滚出去的一步 */

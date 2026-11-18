@@ -1,5 +1,5 @@
 import { Sound } from './audio/sound.ts';
-import { parseLevel, type Dir, type Level } from './game/level.ts';
+import { parseLevel, transposeDef, type Dir, type Level, type LevelDef } from './game/level.ts';
 import { LEVELS } from './game/levels.ts';
 import { bestOf, isUnlocked, mergeProgress, readProgress, record, writeProgress, type Progress } from './game/progress.ts';
 import { isDone, newGame, roll, steps, undo, type Game } from './game/rules.ts';
@@ -23,6 +23,8 @@ export class App {
   private readonly hud: Hud;
   private progress: Progress;
   private index = 0;
+  /** 现在这一关，按摆在屏幕上的朝向（长方形的关卡可能是翻过来摆的，见 facing） */
+  private def: LevelDef = LEVELS[0];
   private level: Level = parseLevel(LEVELS[0].rows);
   private game: Game = newGame(this.level);
   /** 只有 playing 的时候接受操作：entering 是托盘正在换、弹珠还没落下，done 是已经通关 */
@@ -95,13 +97,16 @@ export class App {
     this.phase = 'entering';
     this.queue = [];
     this.index = index;
-    this.level = parseLevel(LEVELS[index].rows);
+    this.hud.closeLevels();
+    this.hud.hideResult();
+    // 新手提示牌：还没通过第 1 关的人才看得到（这时也只可能在第 1 关）
+    this.hud.setGuide(index === 0 && bestOf(this.progress, 0) === 0);
+    this.def = this.facing(LEVELS[index]);
+    this.level = parseLevel(this.def.rows);
     const game = newGame(this.level);
     this.game = game;
     this.progress = { ...this.progress, last: index };
     this.save();
-    this.hud.closeLevels();
-    this.hud.hideResult();
     this.hud.setLevel(LEVELS[index].par, dyeCss(index));
     this.hud.setSteps(0);
     this.relayout(true);
@@ -114,6 +119,19 @@ export class App {
     }
     if (this.game !== game) return;
     this.phase = 'playing';
+  }
+
+  /**
+   * 长方形的关卡朝哪边摆：留给托盘的那一块地方是横的就横着摆，是竖的就竖着摆。
+   * 竖着摆就是把图沿对角线翻过来，玩法、最少步数都不变。进这一关时定下来，玩到一半屏幕转了也不再变。
+   */
+  private facing(def: LevelDef): LevelDef {
+    const rows = def.rows.length;
+    const cols = def.rows[0].length;
+    if (rows === cols) return def;
+    const safe = this.hud.insets();
+    const wide = window.innerWidth - safe.left - safe.right >= window.innerHeight - safe.top - safe.bottom;
+    return cols > rows === wide ? def : transposeDef(def);
   }
 
   /** 玩家的一次操作：排进队里，轮到了再做 */
@@ -165,6 +183,8 @@ export class App {
     this.sound.win(starsFor(used, par));
     await this.view.celebrate(game.pos);
     if (this.game !== game) return;
+    // 第 1 关过了，新手提示牌从此不再出现
+    this.hud.setGuide(false);
     this.hud.showResult({ steps: used, par, best: bestOf(this.progress, this.index), hasNext: this.index + 1 < LEVELS.length });
     this.relayout(true);
   }
@@ -233,7 +253,7 @@ export class App {
       phase: this.phase,
       idle: this.queue.length === 0 && !this.pumping,
       settled: this.view.settled,
-      solution: LEVELS[this.index].solution,
+      solution: this.def.solution,
     };
   }
 }

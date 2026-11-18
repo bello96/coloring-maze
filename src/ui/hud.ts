@@ -46,6 +46,7 @@ function starRow(won: number): HTMLElement {
 export class Hud {
   private readonly tally = el('tally');
   private readonly tools = el('tools');
+  private readonly guide = el('guide');
   private readonly steps = el('steps');
   private readonly par = el('par');
   private readonly undo = el<HTMLButtonElement>('btn-undo');
@@ -98,6 +99,11 @@ export class Hud {
 
   setSound(on: boolean): void {
     this.sound.setAttribute('aria-pressed', String(on));
+  }
+
+  /** 左下角的新手提示牌：亮出来或者收起来 */
+  setGuide(shown: boolean): void {
+    this.guide.hidden = !shown;
   }
 
   showResult(info: ResultInfo): void {
@@ -171,10 +177,26 @@ export class Hud {
     const tally = this.tally;
     const bottom = this.result.hidden ? this.tools : this.result;
     const tallyRight = tally.offsetLeft + tally.offsetWidth;
+    const guide = this.guide.hidden ? null : this.guide;
     // 手机横屏时步数在左、按钮在右（见样式表），其余时候步数在上、按钮在下
     if (tallyRight < w / 2) {
-      return { left: tallyRight + 14, right: w - bottom.offsetLeft + 14, top: 10, bottom: 10 };
+      // 提示牌也在左边，在步数的下面：哪个宽就让开哪个
+      const left = Math.max(tallyRight, guide ? guide.offsetLeft + guide.offsetWidth : 0);
+      return { left: left + 14, right: w - bottom.offsetLeft + 14, top: 10, bottom: 10 };
     }
-    return { left: 10, right: 10, top: tally.offsetTop + tally.offsetHeight + 8, bottom: h - bottom.offsetTop + 12 };
+    const safe: Insets = { left: 10, right: 10, top: tally.offsetTop + tally.offsetHeight + 8, bottom: h - bottom.offsetTop + 12 };
+    if (!guide) return safe;
+
+    // 提示牌在左下角。托盘（有提示牌的只有第 1 关，是正方形的）在留出的那一块里居中、尽量大——碰不到提示牌就不用让
+    const safeW = w - safe.left - safe.right;
+    const safeH = h - safe.top - safe.bottom;
+    const side = Math.min(safeW, safeH);
+    const guideRight = guide.offsetLeft + guide.offsetWidth + 14;
+    const guideTop = guide.offsetTop - 12;
+    if (safe.left + (safeW - side) / 2 >= guideRight || safe.top + (safeH + side) / 2 <= guideTop) return safe;
+    // 碰得到：托盘要么往上让（下面留出提示牌那么高），要么往右让，哪样托盘更大就用哪样
+    const lifted = Math.min(safeW, guideTop - safe.top);
+    const shifted = Math.min(w - safe.right - guideRight, safeH);
+    return lifted >= shifted ? { ...safe, bottom: h - guideTop } : { ...safe, left: guideRight };
   }
 }

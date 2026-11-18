@@ -1,5 +1,7 @@
 // 关卡生成用到的零件：三种造迷宫的办法、迷宫的检查、以及"普通玩法要走几步"的估计。
 // 这里的东西只在生成关卡时用（npm run levels），不会打进游戏里。
+// 棋盘可以是长方形：rows 行、cols 列。正方形的图上，这里每个函数取随机数的次数和先后都和只支持正方形时一样，
+// 所以以前的种子造出来的还是以前那批图。
 import { DIRS, STEP, parseLevel, type Dir, type Level } from '../src/game/level.ts';
 import { isDone, newGame, roll, slide, steps } from '../src/game/rules.ts';
 import { floorConnected, hasPinch } from '../src/game/shape.ts';
@@ -11,12 +13,12 @@ const pick = <T>(rand: Rand, list: readonly T[]): T => list[Math.floor(rand() * 
 const int = (rand: Rand, lo: number, hi: number): number => lo + Math.floor(rand() * (hi - lo + 1));
 
 /** 把 0/1 网格和起点写成字符画 */
-export function toRows(floor: Uint8Array, n: number, start: number): string[] {
+export function toRows(floor: Uint8Array, rows: number, cols: number, start: number): string[] {
   const out: string[] = [];
-  for (let r = 0; r < n; r++) {
+  for (let r = 0; r < rows; r++) {
     let row = '';
-    for (let c = 0; c < n; c++) {
-      const cell = r * n + c;
+    for (let c = 0; c < cols; c++) {
+      const cell = r * cols + c;
       row += cell === start ? 'S' : floor[cell] ? '.' : '#';
     }
     out.push(row);
@@ -29,10 +31,10 @@ export function toRows(floor: Uint8Array, n: number, start: number): string[] {
  * 每一步停下的地方，前面那格记成"必须留着的墙"，这样先前的每一步以后都还成立，
  * 所以凿出来的迷宫一定能通关（照着凿的顺序走就行）。出来的是走廊和小房间的样子。
  */
-export function carve(rand: Rand, n: number, moves: number, longRuns: number): { rows: string[]; route: string } | null {
-  const floor = new Uint8Array(n * n);
-  const locked = new Uint8Array(n * n);
-  const start = int(rand, 0, n * n - 1);
+export function carve(rand: Rand, rows: number, cols: number, moves: number, longRuns: number): { rows: string[]; route: string } | null {
+  const floor = new Uint8Array(rows * cols);
+  const locked = new Uint8Array(rows * cols);
+  const start = int(rand, 0, rows * cols - 1);
   floor[start] = 1;
   let pos = start;
   let last: Dir | null = null;
@@ -44,15 +46,15 @@ export function carve(rand: Rand, n: number, moves: number, longRuns: number): {
     for (const dir of DIRS) {
       if (last && dir === opposite[last]) continue;
       const [dr, dc] = STEP[dir];
-      let r = Math.floor(pos / n);
-      let c = pos % n;
+      let r = Math.floor(pos / cols);
+      let c = pos % cols;
       let len = 0;
       let fresh = 0;
       for (;;) {
         const nr = r + dr;
         const nc = c + dc;
-        if (nr < 0 || nr >= n || nc < 0 || nc >= n) break;
-        const cell = nr * n + nc;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) break;
+        const cell = nr * cols + nc;
         if (locked[cell]) break;
         len++;
         if (!floor[cell]) fresh++;
@@ -61,8 +63,8 @@ export function carve(rand: Rand, n: number, moves: number, longRuns: number): {
         // 能在这里停下的条件：再往前一格是棋盘外，或者还不是地面（可以定成墙）
         const br = r + dr;
         const bc = c + dc;
-        const beyondOut = br < 0 || br >= n || bc < 0 || bc >= n;
-        if (beyondOut || !floor[br * n + bc]) options.push({ dir, len, fresh });
+        const beyondOut = br < 0 || br >= rows || bc < 0 || bc >= cols;
+        if (beyondOut || !floor[br * cols + bc]) options.push({ dir, len, fresh });
       }
     }
     const useful = options.filter((o) => o.fresh > 0);
@@ -75,22 +77,22 @@ export function carve(rand: Rand, n: number, moves: number, longRuns: number): {
       if (other.len > best.len) best = other;
     }
     const [dr, dc] = STEP[best.dir];
-    let r = Math.floor(pos / n);
-    let c = pos % n;
+    let r = Math.floor(pos / cols);
+    let c = pos % cols;
     for (let i = 0; i < best.len; i++) {
       r += dr;
       c += dc;
-      floor[r * n + c] = 1;
+      floor[r * cols + c] = 1;
     }
     const br = r + dr;
     const bc = c + dc;
-    if (br >= 0 && br < n && bc >= 0 && bc < n) locked[br * n + bc] = 1;
-    pos = r * n + c;
+    if (br >= 0 && br < rows && bc >= 0 && bc < cols) locked[br * cols + bc] = 1;
+    pos = r * cols + c;
     last = best.dir;
     route += best.dir;
   }
   if (route.length < 2) return null;
-  return { rows: toRows(floor, n, start), route };
+  return { rows: toRows(floor, rows, cols, start), route };
 }
 
 /** 几种木块的形状（相对坐标） */
@@ -113,27 +115,28 @@ const PIECES: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
  * 出来的是开阔的样子，但大多数通不了关，要靠求解器筛。
  * @param symmetric 木块是否摆成中心对称的样子
  */
-export function blocks(rand: Rand, n: number, pieces: number, symmetric: boolean): string[] | null {
-  const floor = new Uint8Array(n * n).fill(1);
+export function blocks(rand: Rand, rows: number, cols: number, pieces: number, symmetric: boolean): string[] | null {
+  const total = rows * cols;
+  const floor = new Uint8Array(total).fill(1);
   for (let p = 0; p < pieces; p++) {
     const shape = pick(rand, PIECES);
-    const r0 = int(rand, 0, n - 1);
-    const c0 = int(rand, 0, n - 1);
+    const r0 = int(rand, 0, rows - 1);
+    const c0 = int(rand, 0, cols - 1);
     for (const [dr, dc] of shape) {
       const r = r0 + dr;
       const c = c0 + dc;
-      if (r >= n || c >= n) continue;
-      floor[r * n + c] = 0;
-      if (symmetric) floor[(n - 1 - r) * n + (n - 1 - c)] = 0;
+      if (r >= rows || c >= cols) continue;
+      floor[r * cols + c] = 0;
+      if (symmetric) floor[(rows - 1 - r) * cols + (cols - 1 - c)] = 0;
     }
   }
-  if (hasPinch(floor, n, n) || !floorConnected(floor, n, n)) return null;
+  if (hasPinch(floor, rows, cols) || !floorConnected(floor, rows, cols)) return null;
   const floors: number[] = [];
   floor.forEach((v, i) => {
     if (v) floors.push(i);
   });
-  if (floors.length < n * n * 0.5) return null;
-  return toRows(floor, n, pick(rand, floors));
+  if (floors.length < total * 0.5) return null;
+  return toRows(floor, rows, cols, pick(rand, floors));
 }
 
 /**
@@ -143,29 +146,38 @@ export function blocks(rand: Rand, n: number, pieces: number, symmetric: boolean
  * 改到差距为 0 就得到一张一定能通关、也不会困死的图。
  * @param symmetric 是否始终保持中心对称
  * @param patience 最多改多少次，还不行就放弃
+ * @param density 地面最少、最多占多大比例：再少就成了走廊，再多就空得没什么可想的
  */
-export function mend(rand: Rand, n: number, pieces: number, symmetric: boolean, patience = 4000): string[] | null {
-  const floor = new Uint8Array(n * n).fill(1);
-  const mate = (cell: number): number => (symmetric ? n * n - 1 - cell : cell);
+export function mend(
+  rand: Rand,
+  rows: number,
+  cols: number,
+  pieces: number,
+  symmetric: boolean,
+  patience = 4000,
+  density: readonly [number, number] = [0.55, 0.85],
+): string[] | null {
+  const total = rows * cols;
+  const floor = new Uint8Array(total).fill(1);
+  const mate = (cell: number): number => (symmetric ? total - 1 - cell : cell);
   for (let p = 0; p < pieces; p++) {
     const shape = pick(rand, PIECES);
-    const r0 = int(rand, 0, n - 1);
-    const c0 = int(rand, 0, n - 1);
+    const r0 = int(rand, 0, rows - 1);
+    const c0 = int(rand, 0, cols - 1);
     for (const [dr, dc] of shape) {
       const r = r0 + dr;
       const c = c0 + dc;
-      if (r >= n || c >= n) continue;
-      floor[r * n + c] = 0;
-      floor[mate(r * n + c)] = 0;
+      if (r >= rows || c >= cols) continue;
+      floor[r * cols + c] = 0;
+      floor[mate(r * cols + c)] = 0;
     }
   }
-  // 地面占五成五到八成五：再少就成了走廊，再多就空得没什么可想的
   const shapely = (): Level | null => {
     let floorCount = 0;
     for (const v of floor) floorCount += v;
-    if (floorCount < n * n * 0.55 || floorCount > n * n * 0.85) return null;
-    if (hasPinch(floor, n, n) || !floorConnected(floor, n, n)) return null;
-    return { rows: n, cols: n, floor, start: 0, floorCount };
+    if (floorCount < total * density[0] || floorCount > total * density[1]) return null;
+    if (hasPinch(floor, rows, cols) || !floorConnected(floor, rows, cols)) return null;
+    return { rows, cols, floor, start: 0, floorCount };
   };
   let board = shapely();
   if (!board) return null;
@@ -177,7 +189,7 @@ export function mend(rand: Rand, n: number, pieces: number, symmetric: boolean, 
   /** 现在这张图离"保证不会困死"还差多少 */
   let lack = shortfall({ ...board, start });
   for (let i = 0; i < patience && lack > 0; i++) {
-    const cell = int(rand, 0, n * n - 1);
+    const cell = int(rand, 0, total - 1);
     if (rand() < 0.08) {
       if (!floor[cell] || cell === start) continue;
       const next = shortfall({ ...board, start: cell });
@@ -202,7 +214,7 @@ export function mend(rand: Rand, n: number, pieces: number, symmetric: boolean, 
       floor[other] = wasOther;
     }
   }
-  return lack === 0 ? toRows(floor, n, start) : null;
+  return lack === 0 ? toRows(floor, rows, cols, start) : null;
 }
 
 /**

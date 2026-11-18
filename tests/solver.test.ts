@@ -192,7 +192,7 @@ describe('analyze: the two ways of searching agree on mazes too big to try every
     let longest = 0;
     for (let i = 0; i < 400; i++) {
       const n = 10 + (i % 3);
-      const made = carve(rand, n, 10 + Math.floor(rand() * 30), i % 4);
+      const made = carve(rand, n, n, 10 + Math.floor(rand() * 30), i % 4);
       if (!made) continue;
       const level = parseLevel(made.rows);
       const label = made.rows.join('/');

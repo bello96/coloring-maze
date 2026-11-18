@@ -20,6 +20,8 @@ interface Inner {
       readonly tray: {
         readonly level: Level;
         readonly cell: number;
+        readonly width: number;
+        readonly depth: number;
         readonly stain: { isDyed(cell: number): boolean };
         cellCenter(cell: number): { x: number; z: number };
         readonly group: { readonly position: { x: number; y: number; z: number } };
@@ -31,7 +33,17 @@ interface Inner {
     readonly ball: unknown;
     readonly extras: unknown[];
     readonly timers: unknown[];
-    readonly stage: { readonly board: { readonly children: unknown[] }; renders: number; shadowRenders: number };
+    readonly stage: {
+      readonly board: { readonly children: unknown[] };
+      renders: number;
+      shadowRenders: number;
+      readonly resizes: Array<{
+        width: number;
+        height: number;
+        safe: { left: number; right: number; top: number; bottom: number };
+        box: { halfWidth: number; halfDepth: number };
+      }>;
+    };
     enter(...args: unknown[]): Promise<void>;
   };
   readonly game: Game;
@@ -42,11 +54,12 @@ interface Inner {
   readonly pumping: boolean;
   readonly progress: Progress;
   readonly sound: { rolling(speed: number): void };
-  snapshot(): { level: number; steps: number; phase: string; idle: boolean; settled: boolean };
+  snapshot(): { level: number; steps: number; phase: string; idle: boolean; settled: boolean; solution: string };
 }
 
-async function boot(saved?: object): Promise<{ browser: FakeBrowser; app: Inner }> {
+async function boot(saved?: object, screen?: { width: number; height: number }): Promise<{ browser: FakeBrowser; app: Inner }> {
   const browser = new FakeBrowser();
+  if (screen) Object.assign(browser, screen);
   browser.install();
   if (saved) browser.storage.set(SAVE, JSON.stringify(saved));
   const { App } = await import('../src/app.ts');
@@ -361,7 +374,7 @@ describe('the picture', () => {
 
   it('frames the tray again when the window changes size', async () => {
     const { app, browser } = await boot();
-    const stage = app.view.stage as unknown as { resizes: Array<{ width: number; height: number }> };
+    const stage = app.view.stage;
     browser.resize(844, 390);
     await browser.frame();
     expect(stage.resizes.at(-1)).toMatchObject({ width: 844, height: 390 });
@@ -376,6 +389,136 @@ describe('the picture', () => {
     expect(rolling.mock.lastCall?.[0]).toBeGreaterThan(0);
     browser.setHidden(true);
     expect(rolling.mock.lastCall?.[0]).toBe(0);
+  });
+});
+
+describe('the guide for first-time players', () => {
+  it('is on the screen until the first level has been finished, and never comes back', async () => {
+    const { app, browser } = await boot();
+    expect(browser.el('guide').hidden).toBe(false);
+    await play(browser, 'UL');
+    expect(browser.el('guide').hidden).toBe(false);
+    await browser.key('D');
+    await browser.seconds(2);
+    expect(app.snapshot().phase).toBe('done');
+    expect(browser.el('guide').hidden).toBe(true);
+    // 再玩一次第 1 关，或者去别的关再回来，都不再出现
+    await browser.click('btn-again');
+    await browser.seconds(2);
+    expect(browser.el('guide').hidden).toBe(true);
+    await browser.click('btn-levels');
+    await browser.click(browser.tiles()[1]);
+    await browser.seconds(3);
+    await browser.click('btn-levels');
+    await browser.click(browser.tiles()[0]);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 1, phase: 'playing' });
+    expect(browser.el('guide').hidden).toBe(true);
+  });
+
+  it('never shows to someone who finished the first level on an earlier visit', async () => {
+    const { browser } = await boot({ best: [3], last: 0, muted: false });
+    expect(browser.el('guide').hidden).toBe(true);
+  });
+
+  it('leaves the tray where it is on a tall screen, where there is room for both', async () => {
+    const { app } = await boot();
+    // 竖屏 390×844：按钮那一排上沿在 783，托盘的下沿到不了提示牌那里
+    expect(app.view.stage.resizes.at(-1)!.safe).toEqual({ left: 10, right: 10, top: 94, bottom: 73 });
+  });
+
+  it('makes the tray move up out of its way on a short screen, and gives the room back afterwards', async () => {
+    const { app, browser } = await boot(undefined, { width: 375, height: 667 });
+    const stage = app.view.stage;
+    // 提示牌的上沿在 667 − 78 − 124 = 465，再留 12 的空
+    expect(stage.resizes.at(-1)!.safe.bottom).toBe(667 - 453);
+    await play(browser, 'ULD');
+    await browser.seconds(3);
+    // 通关面板出来、提示牌收起：让的是通关面板
+    expect(stage.resizes.at(-1)!.safe.bottom).toBe(220 + 12);
+    await browser.click('btn-next');
+    await browser.seconds(3);
+    expect(stage.resizes.at(-1)!.safe.bottom).toBe(61 + 12);
+  });
+});
+
+describe('a rectangular level', () => {
+  // 第 51 关：存的是 19 行 × 15 列
+  const upTo51 = { best: new Array<number>(LEVELS.length).fill(999), last: 50, muted: false };
+  const WIDE = { width: 1280, height: 720 };
+
+  it('stands upright on a tall screen', async () => {
+    const { app } = await boot(upTo51);
+    expect([app.level.rows, app.level.cols]).toEqual([19, 15]);
+    const { tray } = app.view.board;
+    expect(tray.depth).toBeCloseTo(12.5, 9);
+    expect(tray.width).toBeCloseTo((15 * 10) / 19 + 2.5, 9);
+    expect(app.snapshot().solution).toBe(LEVELS[50].solution);
+  });
+
+  it('lies on its side on a wide screen', async () => {
+    const { app, browser } = await boot(upTo51, WIDE);
+    expect([app.level.rows, app.level.cols]).toEqual([15, 19]);
+    const { tray } = app.view.board;
+    expect(tray.width).toBeCloseTo(12.5, 9);
+    expect(tray.depth).toBeCloseTo((15 * 10) / 19 + 2.5, 9);
+    // 还是同一关：地面一样多，最少步数一样
+    expect(app.level.floorCount).toBe(LEVELS[50].rows.join('').replaceAll('#', '').length);
+    expect(browser.el('par').textContent).toBe(`最少 ${LEVELS[50].par} 步`);
+  });
+
+  it('is framed by its own size, not by the size of a square tray', async () => {
+    const { app } = await boot(upTo51, WIDE);
+    const { tray } = app.view.board;
+    const last = app.view.stage.resizes.at(-1)!;
+    expect(last.box.halfWidth).toBeCloseTo(tray.width / 2, 9);
+    expect(last.box.halfDepth).toBeCloseTo(tray.depth / 2, 9);
+  });
+
+  it('can be played to the end lying on its side, with the picture following every step', async () => {
+    const { app, browser } = await boot(upTo51, WIDE);
+    const route = app.snapshot().solution;
+    await play(browser, route.slice(0, 20));
+    expect(stainMatchesRules(app)).toBe(true);
+    expect(marbleOffCentre(app)).toBeLessThan(1e-6);
+    await play(browser, route.slice(20));
+    await browser.seconds(2);
+    expect(app.snapshot()).toMatchObject({ level: 51, steps: LEVELS[50].par, phase: 'done' });
+    expect(browser.el('result-title').textContent).toBe(`${LEVELS[50].par} 步通关`);
+    expect(wonStars(browser, 'result-stars')).toBe(3);
+  });
+
+  it('keeps the way it lies when the window changes shape in the middle of the level, and follows the screen from the next level on', async () => {
+    const { app, browser } = await boot(upTo51, WIDE);
+    await play(browser, app.snapshot().solution.slice(0, 3));
+    browser.resize(390, 844);
+    await browser.seconds(1);
+    expect([app.level.rows, app.level.cols]).toEqual([15, 19]);
+    expect(app.snapshot().steps).toBe(3);
+    await browser.click('btn-restart');
+    await browser.seconds(2);
+    expect([app.level.rows, app.level.cols]).toEqual([15, 19]);
+    await browser.click('btn-levels');
+    await browser.click(browser.tiles()[51]);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 52, phase: 'playing' });
+    expect([app.level.rows, app.level.cols]).toEqual([19, 15]);
+  });
+
+  it('has the camera glide to fit while a tray of another shape slides in', async () => {
+    const { app, browser } = await boot({ ...upTo51, last: 49 }, WIDE);
+    const stage = app.view.stage;
+    expect(stage.resizes.at(-1)!.box).toEqual({ halfWidth: 6.25, halfDepth: 6.25 });
+    const before = stage.resizes.length;
+    await browser.click('btn-levels');
+    await browser.click(browser.tiles()[50]);
+    await browser.seconds(3);
+    const depths = stage.resizes.slice(before).map((r) => r.box.halfDepth);
+    const target = app.view.board.tray.depth / 2;
+    expect(depths.at(-1)).toBeCloseTo(target, 9);
+    // 不是一下子跳过去的：中间经过了好些大小
+    expect(depths.filter((d) => d < 6.25 - 1e-6 && d > target + 1e-6).length).toBeGreaterThan(10);
+    for (let i = 1; i < depths.length; i++) expect(depths[i]).toBeLessThanOrEqual(depths[i - 1] + 1e-9);
   });
 });
 

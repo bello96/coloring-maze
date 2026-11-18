@@ -89,18 +89,22 @@ export class FakeEl {
 
   // 排版位置：照着竖屏时样式表排出来的样子给
   get offsetLeft(): number {
+    if (this.id === 'guide') return 12;
     return this.id === 'result' ? (this.browser.width - 340) / 2 : 0;
   }
   get offsetWidth(): number {
+    if (this.id === 'guide') return 236;
     return this.id === 'result' ? 340 : this.browser.width;
   }
   get offsetTop(): number {
     if (this.id === 'tally') return 14;
     if (this.id === 'tools') return this.browser.height - 61;
     if (this.id === 'result') return this.browser.height - 220;
+    if (this.id === 'guide') return this.browser.height - 78 - 124;
     return 0;
   }
   get offsetHeight(): number {
+    if (this.id === 'guide') return 124;
     return this.id === 'tally' ? 72 : 41;
   }
 }
@@ -121,7 +125,7 @@ const canvasContext: unknown = new Proxy<Record<string | symbol, unknown>>(
   },
 );
 
-const INITIALLY_HIDDEN = new Set(['tally', 'tools', 'result', 'levels']);
+const INITIALLY_HIDDEN = new Set(['tally', 'tools', 'guide', 'result', 'levels']);
 const CHIPS = new Set(['btn-undo', 'btn-restart', 'btn-levels', 'btn-sound', 'btn-again', 'btn-next', 'btn-close-levels']);
 const KEY_NAMES = { U: 'ArrowUp', D: 'ArrowDown', L: 'ArrowLeft', R: 'ArrowRight' } as const;
 const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));

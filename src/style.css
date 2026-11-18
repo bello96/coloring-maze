@@ -200,6 +200,126 @@ body {
   pointer-events: auto;
 }
 
+/* ───── 新手提示牌：左下角的一块木牌，第一次玩（还没通过第 1 关）时才有 ───── */
+
+.guide {
+  position: fixed;
+  left: calc(env(safe-area-inset-left, 0px) + 20px);
+  bottom: calc(var(--pad-bottom) + 20px);
+  box-sizing: border-box;
+  padding: 15px 20px 16px 18px;
+  border-radius: 14px;
+  background: var(--walnut) var(--wood-dark) center / 560px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 4px 0 var(--walnut-edge),
+    5px 14px 26px rgba(0, 0, 0, 0.6);
+  /* 只是给人看的，手指从它上面滑过去照样算数 */
+  pointer-events: none;
+  animation: guide-in 0.4s 0.6s ease-out both;
+}
+
+@keyframes guide-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+.guide p {
+  margin: 7px 0 0;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--cream-dim);
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.7);
+}
+
+.guide-how {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 13px;
+}
+
+.guide .guide-lead {
+  margin: 0 0 5px;
+  font-size: 16px;
+  letter-spacing: 0.1em;
+  color: var(--cream);
+}
+
+/* 四个方向键：上面一个，下面一排三个，和键盘上一样 */
+.guide-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  grid-template-rows: repeat(2, 30px);
+  gap: 4px;
+}
+
+.key {
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--birch) var(--wood-light) center / 300px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.35),
+    0 2px 0 rgba(20, 10, 5, 0.55),
+    1px 3px 4px rgba(0, 0, 0, 0.4);
+}
+
+.key:first-child {
+  grid-column: 2;
+}
+
+.key:nth-child(n + 2) {
+  grid-row: 2;
+}
+
+.key svg {
+  width: 13px;
+  height: 13px;
+  fill: var(--ink);
+}
+
+.guide-swipe {
+  display: none;
+  width: 50px;
+  height: 50px;
+  fill: var(--cream);
+  filter: drop-shadow(-1px -1px 0 rgba(22, 11, 5, 0.7));
+}
+
+.by-touch {
+  display: none;
+}
+
+/* 触屏上没有方向键：图示和第一句话换成"滑动" */
+@media (hover: none) and (pointer: coarse) {
+  .guide-keys,
+  .by-keys {
+    display: none;
+  }
+
+  .guide-swipe {
+    display: block;
+  }
+
+  .by-touch {
+    display: inline;
+  }
+
+  .guide-how {
+    align-items: center;
+  }
+
+  .guide .guide-lead {
+    margin-bottom: 0;
+  }
+}
+
 /* ───── 通关 ───── */
 
 .result {
@@ -413,7 +533,53 @@ body {
   color: rgba(44, 26, 14, 0.72);
 }
 
+/* 屏幕够大时一排放 10 关：80 关正好 8 排，不用滚动就能全看到。
+   木片是正方形的，面板多宽就决定了多高，所以矮一些的屏幕上面板也窄一些，8 排才放得下 */
+@media (min-width: 900px) and (min-height: 700px) {
+  .levels-board {
+    width: min(880px, 100%, 125vh - 120px);
+  }
+
+  .levels-grid {
+    grid-template-columns: repeat(10, 1fr);
+  }
+}
+
 /* ───── 窄屏、横屏 ───── */
+
+/* 窗口不够宽时左下角被那排按钮占着，提示牌挪到按钮上面 */
+@media (max-width: 960px) {
+  .guide {
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    bottom: calc(var(--pad-bottom) + 78px);
+    padding: 12px 16px 13px 14px;
+  }
+
+  .guide p {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+
+  .guide-how {
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .guide .guide-lead {
+    font-size: 15px;
+  }
+
+  .guide-keys {
+    grid-template-columns: repeat(3, 26px);
+    grid-template-rows: repeat(2, 26px);
+    gap: 3px;
+  }
+
+  .guide-swipe {
+    width: 42px;
+    height: 42px;
+  }
+}
 
 @media (max-width: 480px) {
   .chip {
@@ -476,10 +642,50 @@ body {
   .levels-board {
     width: min(760px, 100%);
   }
+
+  /* 提示牌待在左下角、步数的下面：上下没多少地方，图示和字都小一号，才不会顶到步数 */
+  .guide {
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    bottom: calc(var(--pad-bottom) + 12px);
+    padding: 9px 13px 10px 12px;
+  }
+
+  .guide-how {
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 3px;
+  }
+
+  .guide p,
+  .guide .guide-lead {
+    margin: 4px 0 0;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+  }
+
+  .guide .guide-lead {
+    margin: 0;
+  }
+
+  .guide-keys {
+    grid-template-columns: repeat(3, 20px);
+    grid-template-rows: repeat(2, 20px);
+  }
+
+  .key svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .guide-swipe {
+    width: 34px;
+    height: 34px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .result,
+  .guide,
   .result .stars svg.won {
     animation: none;
   }

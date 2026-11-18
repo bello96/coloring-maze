@@ -31,6 +31,20 @@ export interface LevelDef {
 }
 
 /**
+ * 把一关沿左上到右下的对角线翻过来：行变成列，列变成行。
+ * 玩法一点没变（最少步数相同，原来的"上"变成"左"、"下"变成"右"），只是横竖对调了——
+ * 长方形的关卡靠它在宽屏上横着摆、在竖屏上竖着摆。
+ */
+export function transposeDef(def: LevelDef): LevelDef {
+  const turned: Readonly<Record<string, Dir>> = { U: 'L', L: 'U', D: 'R', R: 'D' };
+  return {
+    rows: Array.from({ length: def.rows[0].length }, (_, c) => def.rows.map((row) => row[c]).join('')),
+    par: def.par,
+    solution: [...def.solution].map((ch) => turned[ch]).join(''),
+  };
+}
+
+/**
  * 把字符画读成一关：`#` 是墙，`.` 是地面，`S` 是小球出发的那格地面。
  * 每行一个字符串，所有行必须一样长，`S` 必须正好一个。
  */

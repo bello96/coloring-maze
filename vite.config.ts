@@ -19,7 +19,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
-    // 关卡测试要把 50 关逐一求出最少步数，电脑忙的时候会超过默认的 5 秒
+    // 关卡测试要把每一关的最少步数重新算一遍，电脑忙的时候会超过默认的 5 秒
     testTimeout: 60_000,
   },
 });

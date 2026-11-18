@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { applyFraming, frameBox, type FrameRequest } from './framing.ts';
+import { isModestGpu } from './sharpness.ts';
 import { BASE_THICKNESS, OUTER } from './dims.ts';
 import type { TrayAssets } from './tray.ts';
-import { BIRCH, TABLE, WALNUT, makeWood } from './wood.ts';
+import { BIRCH, TABLE, WALNUT, WoodMill } from './wood.ts';
 
 /** 画面四边各留出多少像素给界面 */
 export interface Insets {
@@ -12,6 +13,15 @@ export interface Insets {
   readonly top: number;
   readonly bottom: number;
 }
+
+/** 要放进画面的托盘有多大：从中心往左右、往前后各伸出多少（世界单位） */
+export interface Extent {
+  readonly halfWidth: number;
+  readonly halfDepth: number;
+}
+
+/** 正方形托盘的大小 */
+export const SQUARE: Extent = { halfWidth: OUTER / 2, halfDepth: OUTER / 2 };
 
 /** 相机的竖直视角和俯视的倾角（度） */
 const FOV = 28;
@@ -86,9 +96,15 @@ export class Stage {
       t.anisotropy = anisotropy;
       return t;
     };
-    const birch = makeWood({ ...BIRCH, size: 1024 });
-    const walnut = makeWood({ ...WALNUT, size: 1024 });
-    const tableWood = makeWood({ ...TABLE, size: 1024 });
+    // 木纹要画到一个像素那么细才像真的，所以屏幕上托盘有多少像素，木纹就画多大：又大又细的屏幕配独立显卡用 2048，
+    // 其余用 1024（集成显卡本来就不会按屏幕的全部像素来画，见 sharpness.ts；贴图再大只是白白多读显存、掉帧）
+    const fine = Math.min(window.innerWidth, window.innerHeight) * (window.devicePixelRatio || 1) > 1300 && !isModestGpu(this.gpuName());
+    const size = fine ? 2048 : 1024;
+    const mill = new WoodMill(this.renderer);
+    const birch = mill.make({ ...BIRCH, size });
+    const walnut = mill.make({ ...WALNUT, size });
+    const tableWood = mill.make({ ...TABLE, size });
+    mill.dispose();
     this.woods = { dark: walnut.color, light: birch.color };
     this.assets = {
       birch: texture(birch.color, true),
@@ -105,11 +121,11 @@ export class Stage {
     const tableRelief = texture(tableWood.relief, false);
     for (const t of [tableMap, tableRelief]) {
       t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
-      t.repeat.set(3, 3);
+      t.repeat.set(6, 6);
     }
     const table = new THREE.Mesh(
       new THREE.PlaneGeometry(120, 120),
-      new THREE.MeshStandardMaterial({ map: tableMap, bumpMap: tableRelief, bumpScale: 1.2, roughness: 0.56 }),
+      new THREE.MeshStandardMaterial({ map: tableMap, bumpMap: tableRelief, bumpScale: 1.0, roughness: 0.56 }),
     );
     table.rotation.x = -Math.PI / 2;
     table.receiveShadow = true;
@@ -133,8 +149,8 @@ export class Stage {
     this.shadowsStale = true;
   }
 
-  /** 画面大小变了，或者界面占的地方变了：重新取景 */
-  resize(width: number, height: number, pixelRatio: number, safe: Insets): void {
+  /** 画面大小变了，或者界面占的地方变了，或者换了一个大小不一样的托盘：重新取景 */
+  resize(width: number, height: number, pixelRatio: number, safe: Insets, box: Extent): void {
     width = Math.max(1, width);
     height = Math.max(1, height);
     // 只有大小真的变了才动画布：重设画布大小会清空它、重新分配显存，取景滑动时每帧都做就卡了
@@ -150,8 +166,8 @@ export class Stage {
       tilt: TILT,
       width: this.width,
       height: this.height,
-      halfWidth: OUTER / 2,
-      halfDepth: OUTER / 2,
+      halfWidth: box.halfWidth,
+      halfDepth: box.halfDepth,
       boxHeight: TALLEST,
       safe,
     };
