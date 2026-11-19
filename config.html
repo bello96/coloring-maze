@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1a110c" />
+    <meta name="robots" content="noindex" />
+    <title>关卡配置 · 染色迷宫</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <!-- 桌上三样东西：左边的木板是关卡列表，中间是正在改的那只托盘，右边的木板是这一关的设置、检查和发布。
+         验过口令、读到关卡之后才亮出来（见 src/config/main.ts） -->
+    <main class="bench" id="bench" hidden>
+      <aside class="plank levels">
+        <h2 class="levels-title">关卡 <span id="level-count"></span></h2>
+        <ol id="level-list"></ol>
+        <div class="levels-actions">
+          <button class="chip" id="btn-add" type="button">＋ 新增关卡</button>
+          <button class="chip" id="btn-delete" type="button">删除本关</button>
+        </div>
+      </aside>
+
+      <section class="table">
+        <!-- 托盘是一整块胡桃木；画布只画铣出来的地面，墙的位置空着，让这块木头透上来 -->
+        <div class="tray"><canvas id="grid" aria-label="这一关的地图"></canvas></div>
+      </section>
+
+      <aside class="plank panel">
+        <section class="panel-part">
+          <div class="publish">
+            <button class="chip chip-light" id="btn-publish" type="button">发布</button>
+            <a class="chip" id="link-game" href="/">返回游戏</a>
+          </div>
+          <p id="publish-note" aria-live="polite"></p>
+        </section>
+
+        <section class="panel-part">
+          <h1 id="level-title"></h1>
+          <div class="field">
+            <span class="field-name">大小</span>
+            <div class="field-body">
+              <label class="size">行<input class="inset" id="size-rows" type="number" min="5" step="1" inputmode="numeric" /></label>
+              <label class="size">列<input class="inset" id="size-cols" type="number" min="5" step="1" inputmode="numeric" /></label>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-name">画笔</span>
+            <div class="field-body brushes">
+              <button id="brush-wall" type="button" aria-pressed="true">墙</button>
+              <button id="brush-floor" type="button" aria-pressed="false">地面</button>
+              <button id="brush-start" type="button" aria-pressed="false">起点</button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-name">染料</span>
+            <!-- 八种现成的染料由程序按 DYES 放进来，排在"自选"前面 -->
+            <div class="field-body" id="dyes">
+              <label class="dye-own">自选<input id="dye-custom" type="color" /></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-part">
+          <h2 class="checks-title">检查</h2>
+          <!-- 四步各占一格：形状、每一格滚不滚得到、最少步数、会不会走进死局 -->
+          <ul id="checks">
+            <li></li>
+            <li></li>
+            <li></li>
+            <li></li>
+          </ul>
+          <p class="advice" id="advice" hidden>
+            <span id="advice-text"></span>
+            <button class="chip chip-light chip-small" id="btn-apply" type="button" hidden>采用建议</button>
+          </p>
+          <p id="par"><span>最少步数</span> <b id="par-number">—</b></p>
+        </section>
+      </aside>
+    </main>
+
+    <!-- 线上的关卡读不到时只有这一句：这时不让编辑，免得拿内置的关卡把线上的盖掉 -->
+    <p class="notice" id="notice" hidden>读不到线上的关卡，请刷新重试</p>
+
+    <!-- 进门的口令弹层 -->
+    <div class="gate" id="gate" hidden>
+      <form class="plank gate-plaque">
+        <!-- 看不见的用户名：浏览器的密码管理器要有它，才肯把口令记在一个固定的名字底下 -->
+        <input type="text" name="username" value="coloring-maze" autocomplete="username" hidden />
+        <label for="gate-input">管理口令</label>
+        <div class="gate-row">
+          <input class="inset" id="gate-input" type="password" autocomplete="current-password" />
+          <button class="chip chip-light" id="gate-submit" type="submit">进入</button>
+        </div>
+        <p id="gate-error" role="alert"></p>
+      </form>
+    </div>
+
+    <script type="module" src="/src/config/main.ts"></script>
+  </body>
+</html>

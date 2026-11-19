@@ -19,8 +19,24 @@ export class FakeEl {
   type = '';
   width = 0;
   height = 0;
-  readonly style = { setProperty(): void {} };
-  readonly classList = { add: (name: string): void => void (this.className += ` ${name}`) };
+  /** 滚到了哪（只有选关树那一屏会滚） */
+  scrollTop = 0;
+  /** 样式只记下来，不排版：props 里是用 setProperty 设过的那些（CSS 变量等） */
+  readonly style: { [key: string]: unknown; readonly props: Record<string, string>; setProperty(name: string, value: string): void } = {
+    props: {},
+    setProperty(name: string, value: string): void {
+      this.props[name] = value;
+    },
+  };
+  readonly classList = {
+    add: (name: string): void => void (this.className += ` ${name}`),
+    remove: (name: string): void => {
+      this.className = this.className
+        .split(' ')
+        .filter((part) => part !== '' && part !== name)
+        .join(' ');
+    },
+  };
   private readonly browser: FakeBrowser;
 
   constructor(browser: FakeBrowser, tag: string, id = '') {
@@ -87,6 +103,14 @@ export class FakeEl {
     this.parent = null;
   }
 
+  // 元素里面有多大：只有铺满整屏的选关树会问
+  get clientWidth(): number {
+    return this.browser.width;
+  }
+  get clientHeight(): number {
+    return this.browser.height;
+  }
+
   // 排版位置：照着竖屏时样式表排出来的样子给
   get offsetLeft(): number {
     if (this.id === 'guide') return 12;
@@ -125,8 +149,8 @@ const canvasContext: unknown = new Proxy<Record<string | symbol, unknown>>(
   },
 );
 
-const INITIALLY_HIDDEN = new Set(['tally', 'tools', 'guide', 'result', 'levels']);
-const CHIPS = new Set(['btn-undo', 'btn-restart', 'btn-levels', 'btn-sound', 'btn-again', 'btn-next', 'btn-close-levels']);
+const INITIALLY_HIDDEN = new Set(['tally', 'tools', 'guide', 'result', 'tree']);
+const CHIPS = new Set(['btn-undo', 'btn-restart', 'btn-levels', 'btn-sound', 'btn-again', 'btn-next', 'btn-result-levels']);
 const KEY_NAMES = { U: 'ArrowUp', D: 'ArrowDown', L: 'ArrowLeft', R: 'ArrowRight' } as const;
 const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -215,11 +239,21 @@ export class FakeBrowser {
     for (let i = 0; i < Math.ceil(s * 60); i++) await this.frame();
   }
 
-  /** 按一下方向键 */
-  async key(dir: keyof typeof KEY_NAMES): Promise<void> {
-    const event = { key: KEY_NAMES[dir], repeat: false, altKey: false, ctrlKey: false, metaKey: false, preventDefault() {}, target: this.document.body };
+  /** 按一下方向键。返回这次按键有没有被页面拦下来（拦下来了，浏览器就不会拿它去滚动页面） */
+  async key(dir: keyof typeof KEY_NAMES): Promise<boolean> {
+    let prevented = false;
+    const event = {
+      key: KEY_NAMES[dir],
+      repeat: false,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault: () => void (prevented = true),
+      target: this.document.body,
+    };
     for (const fn of this.windowListeners.keydown ?? []) fn(event as never);
     await flush();
+    return prevented;
   }
 
   /** 点一下：先是 window 上的监听（解锁声音），再是元素自己的，最后冒泡到 document。按钮灰着就点不动。 */
@@ -261,8 +295,9 @@ export class FakeBrowser {
     for (const fn of this.documentListeners.visibilitychange ?? []) fn({} as never);
   }
 
-  /** 选关面板里的那些木片 */
-  tiles(): FakeEl[] {
-    return this.el('levels-grid').children.map((item) => item.children[0]);
+  /** 选关树上的那些木片，第 1 关在最前面 */
+  knots(): FakeEl[] {
+    const list = this.el('tree-board').children.find((kid) => kid.className === 'tree-knots');
+    return list ? list.children.map((item) => item.children[0]) : [];
   }
 }

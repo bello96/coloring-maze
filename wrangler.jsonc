@@ -1,12 +1,65 @@
 {
-  // Cloudflare Workers 静态资源部署：游戏是纯前端，没有服务端代码。
-  // 发布的是 `npm run build` 生成的 dist/ 目录。
+  // Cloudflare Workers：静态资源，加一个很小的 Worker。
+  // 游戏和配置页都是 `npm run build` 生成的 dist/ 目录里的静态文件；
+  // 只有关卡接口 /api/levels 会跑 Worker 的代码（worker/index.ts），关卡表存在 KV 里。
+  //
+  // 管理口令不写在这个文件里：它是 Worker 的密钥 LEVEL_ADMIN_TOKEN，用 `wrangler secret put LEVEL_ADMIN_TOKEN` 设。
+  // 没设的话接口拒绝一切写入。
+  //
+  // 下面几处注释里说到的 Cloudflare 的规矩，是 2026-11-18 对着当时的文档核对的（免费版 Workers Free）。
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "coloring-maze",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-11-16",
   "assets": {
-    "directory": "./dist"
+    "directory": "./dist",
+    // Worker 里用 env.ASSETS.fetch(request) 把不归接口管的请求交还给静态资源
+    "binding": "ASSETS",
+    // 只有 /api/ 下的请求先跑 Worker。别的路径照旧先找静态文件，找到了直接回，不经过 Worker；
+    // 找不到文件的请求（比如乱敲的地址）也会到 Worker，由它交还给静态资源去回 404。
+    // 规则的写法：每条以 / 开头；* 能顶任意一串字符（斜杠也算），所以 "/api/*" 管 /api/ 和它下面的一切，
+    // 不含 /api 本身；只比路径，不看查询串。以 !/ 开头的是反过来的规则（交给静态资源），比正的规则优先。
+    // 最多 100 条，先后顺序无所谓。
+    //   https://developers.cloudflare.com/workers/static-assets/binding/#run_worker_first
+    //   https://developers.cloudflare.com/workers/static-assets/routing/worker-script/
+    "run_worker_first": ["/api/*"]
+    // html_handling 没写，用的是默认的 "auto-trailing-slash"：请求 /config 直接回 dist/config.html（200），
+    // /config.html 和 /config/ 会被 307 转到 /config。所以配置页的地址不用另写重写规则。
+    //   https://developers.cloudflare.com/workers/static-assets/routing/advanced/html-handling/
   },
+  // 关卡表存在这个 KV 里：键 levels 是线上这一版，键 levels:prev 是它顶替掉的上一版（发错了可以用 wrangler 手动恢复）。
+  // 下面的 id 是 2026-11-19 用 `wrangler kv namespace create coloring-maze-levels` 建出来的命名空间，标题就叫 coloring-maze-levels。
+  // 注意：这个账号里还有一个标题叫 LEVELS_KV 的命名空间，那是另一个项目（demon）的，里面是它的关卡，
+  // 绝对不要把它的 id 填到这里。下面的 binding 是代码里用的名字，和命名空间的标题没有关系，不用改。
+  // 免费版每天读 10 万次、写 1000 次，同一个键每秒最多写一次；玩家每打开一次游戏读一次，发布一次是读一次、写两次。
+  // 写进去的内容传到全球各地要一会儿（文档的说法是 "up to 60 seconds or more"），"还没有这个键"也一样会被缓存。
+  //   https://developers.cloudflare.com/kv/platform/limits/
+  //   https://developers.cloudflare.com/kv/concepts/how-kv-works/
+  "kv_namespaces": [
+    {
+      "binding": "LEVELS_KV",
+      "id": "6513d7040acd474191fe23002dee5985"
+    }
+  ],
+  // 免费版对 Worker 的两条限额：
+  //
+  // 一、CPU：每次请求 10 毫秒（限额表里 "CPU time per HTTP request" 一行，免费版是 10 ms；价格页的说法是
+  //    "10 milliseconds of CPU time per invocation"）。这是每一次请求各自的上限，不是按平均算的；
+  //    等网络、等 KV 读写的时间不算在内。超了，Cloudflare 回错误 1102（Worker exceeded resource limits）。
+  //    文档同时说有一点余量——"Each isolate has some built-in flexibility to allow for cases where your Worker
+  //    infrequently runs over the configured limit. If your Worker starts hitting the limit consistently, its execution
+  //    will be terminated according to the limit configured."；讲监控图表的那一页还提到没用完的时间可以"rollover"
+  //    给后面的请求。但余量有多大、怎么攒，文档都没给数字，所以不能把它算进预算里。
+  //    发布关卡时服务端实际要算多久，数字在 worker/api.ts 开头。
+  //      https://developers.cloudflare.com/workers/platform/limits/#cpu-time
+  //      https://developers.cloudflare.com/workers/observability/metrics-and-analytics/
+  //
+  // 二、请求数：跑了 Worker 的请求每天 10 万次，UTC 零点清零。静态文件的请求不算在内，也不限量
+  //    （"Requests to static assets are free and unlimited"）。按上面的规则，算数的只有 /api/* 和找不到文件的请求：
+  //    玩家每打开一次游戏读一次 /api/levels，算一次。额度用完之后，/api/* 回 429，静态文件照常——
+  //    游戏拿不到线上的关卡，就用上次留的那份或者内置的 80 关，不会打不开。
+  //      https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/
+  //      https://developers.cloudflare.com/workers/platform/pricing/
   "routes": [
     {
       "pattern": "coloring-maze.dengjiabei.cn",

@@ -87,6 +87,8 @@ export class GameView {
   private governor = new Governor(1);
   /** 上一帧各个托盘的位置和倾斜，用来看它们动没动（动了影子才要重画） */
   private trayPose = '';
+  /** 画面被别的东西整个盖住了（选关树亮着），见 cover */
+  private covered = false;
 
   constructor(canvas: HTMLCanvasElement, font: string, events: ViewEvents) {
     this.stage = new Stage(canvas, font);
@@ -113,9 +115,9 @@ export class GameView {
     const elapsed = t - this.lastFrame;
     const dt = Math.min(0.05, Math.max(0, elapsed));
     this.lastFrame = t;
-    // 只在连续出画面的时候量速度：停了一阵再醒过来的第一帧不算
-    if (this.streak && this.governor.frame(elapsed)) this.applyShot();
-    this.streak = true;
+    // 只在连续出画面的时候量速度：停了一阵再醒过来的第一帧不算；画面被盖住的时候根本没在画，更不算
+    if (this.streak && !this.covered && this.governor.frame(elapsed)) this.applyShot();
+    this.streak = !this.covered;
 
     while (this.timers.length > 0 && this.timers[0].at <= t) this.timers.shift()!.run();
     // 动画自己可能在这一帧里换上了下一段动画，所以演完之后要确认还是它才清掉
@@ -149,12 +151,16 @@ export class GameView {
       b.drops.update(dt);
       dropsMoving ||= b.drops.active;
     }
-    this.stage.render(pose !== this.trayPose);
-    this.trayPose = pose;
+    // 被盖住的时候不画（上一帧的位置也不记：等露出来，影子按那时的样子重画）
+    if (!this.covered) {
+      this.stage.render(pose !== this.trayPose);
+      this.trayPose = pose;
+    }
 
     const busy = this.ball !== null || this.extras.length > 0 || this.timers.length > 0 || dropsMoving || tilting;
     if (busy) this.activeUntil = t + LINGER;
-    if (t < this.activeUntil) {
+    // 平时动画演完还要接着画几秒（等染料变干）；被盖住的时候没人看，演完就停
+    if (this.covered ? busy : t < this.activeUntil) {
       // 这一帧里可能已经有人叫过 wake() 排好了下一帧；再排一次的话，以后每帧就要画两遍
       if (!this.raf) this.raf = requestAnimationFrame(this.frame);
     } else {
@@ -251,14 +257,25 @@ export class GameView {
     if (this.shot) this.stage.resize(this.size.width, this.size.height, this.governor.ratio, this.shot.safe, this.shot.box);
   }
 
-  /** 界面上的木片要用的两种木纹图片 */
-  woodUrls(): { dark: string; light: string } {
+  /**
+   * 画面被整个盖住了（选关树亮出来），或者又露出来了。
+   * 盖住的时候：正演到一半的动画照常演完——外面的人还等着它结束——但一帧也不画，也不拿这些帧去量快慢
+   * （滚动那棵树造成的慢，不该算到游戏画面头上）；演完就停，手机上滚树时不用和整幅 3D 画面抢显卡。
+   */
+  cover(on: boolean): void {
+    this.covered = on;
+    // 露出来：把现在的样子画上
+    if (!on && this.board) this.wake();
+  }
+
+  /** 界面要用的木纹图片：木片、木牌的两种，和选关树那块长木板的 */
+  woodUrls(): { dark: string; light: string; plank: string } {
     return this.stage.woodUrls();
   }
 
   /**
    * 摆上一关的托盘，然后让弹珠落到起点。
-   * 已经有托盘时，旧的往左滑走、新的从右边滑进来。弹珠第一次落地时结束等待（这时就可以操作了）。
+   * 新托盘从右边滑进来；桌上已经有托盘的话，旧的同时往左滑走。弹珠第一次落地时结束等待（这时就可以操作了）。
    */
   async enter(level: Level, number: number, dyeHex: number): Promise<void> {
     const dye = new THREE.Color(dyeHex);
@@ -276,21 +293,22 @@ export class GameView {
     if (old) old.tilt.toX = old.tilt.toZ = 0;
     this.board = next;
     this.stage.board.add(tray.group);
-    // 新托盘的大小可能和旧的不一样（长方形的关卡）：趁着换托盘，把镜头也移到正好装下新托盘的地方
+    // 新托盘的大小可能和旧的不一样（长方形的关卡）：趁着换托盘，把镜头也移到正好装下新托盘的地方。
+    // 桌上还没有托盘（刚从选关树进来）就没什么可移的，镜头直接到位
     this.aimBox = { halfWidth: tray.width / 2, halfDepth: tray.depth / 2 };
     this.reframe(old ? 0.9 : 0);
 
+    this.leaving = old;
+    tray.group.position.x = SLIDE;
+    this.stage.setShadowReach(SLIDE + 9);
+    this.events.slide();
+    await this.tween(0.9, (k) => {
+      const e = easeInOut(k);
+      if (old) old.tray.group.position.x = -SLIDE * e;
+      tray.group.position.x = SLIDE * (1 - e);
+    });
+    this.stage.setShadowReach();
     if (old) {
-      this.leaving = old;
-      tray.group.position.x = SLIDE;
-      this.stage.setShadowReach(SLIDE + 9);
-      this.events.slide();
-      await this.tween(0.9, (k) => {
-        const e = easeInOut(k);
-        old.tray.group.position.x = -SLIDE * e;
-        tray.group.position.x = SLIDE * (1 - e);
-      });
-      this.stage.setShadowReach();
       this.leaving = null;
       this.stage.board.remove(old.tray.group);
       old.tray.dispose();

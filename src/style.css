@@ -21,6 +21,7 @@
   /* 由程序画出来的两种木纹，启动时填进来（见 app.ts） */
   --wood-dark: none;
   --wood-light: none;
+  --wood-plank: none;
   --font: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
   --pad-top: env(safe-area-inset-top, 0px);
   --pad-bottom: env(safe-area-inset-bottom, 0px);
@@ -33,7 +34,7 @@ body {
   overflow: hidden;
   background: var(--table);
   overscroll-behavior: none;
-  /* 面板里可以上下滑，但哪里都不能双指缩放、双击放大 */
+  /* 选关树可以上下滑，但哪里都不能双指缩放、双击放大 */
   touch-action: pan-x pan-y;
   -webkit-user-select: none;
   user-select: none;
@@ -365,6 +366,7 @@ body {
 
 .result-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
   margin-top: 16px;
@@ -412,136 +414,252 @@ body {
   }
 }
 
-/* ───── 选关 ───── */
+/* ───── 选关树 ─────
+   打开网站先看到的一屏：桌上一块很长的胡桃木板，上面刻着一棵树，一关一个圆木片。
+   整块板子上下滚动（浏览器自带的滚动）；木板多宽、多长，木片放在哪，由程序算好（见 ui/tree.ts）。 */
 
-.levels {
+.tree {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
-  padding: calc(var(--pad-top) + 16px) 16px calc(var(--pad-bottom) + 16px);
-  box-sizing: border-box;
-  background: rgba(8, 5, 3, 0.74);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  background: var(--table);
+  scrollbar-width: thin;
+  scrollbar-color: #4a2f1c transparent;
+  animation: tree-in 0.28s ease-out both;
 }
 
-.levels-board {
-  width: min(560px, 100%);
-  box-sizing: border-box;
-  padding: 14px 16px 18px;
-  border-radius: 16px;
-  background: var(--walnut) var(--wood-dark) center / 700px;
+@keyframes tree-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 和游戏画面一样，四角暗下去 */
+.tree::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 90% 80% at 50% 46%, transparent 52%, rgba(6, 3, 2, 0.5) 100%);
+}
+
+.tree-board {
+  position: relative;
+  margin: 0 auto;
+  --r: 34px;
+  background: var(--walnut) var(--wood-plank) center top / 100% auto repeat-y;
   box-shadow:
-    inset 0 1px 0 rgba(255, 232, 196, 0.24),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
-    0 5px 0 var(--walnut-edge),
-    8px 20px 40px rgba(0, 0, 0, 0.65);
+    inset 1px 0 0 rgba(255, 232, 196, 0.2),
+    inset -1px 0 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 70px rgba(0, 0, 0, 0.28);
 }
 
-.levels-board header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+/* 刻出来的树：深色的是凹槽，底下垫的那份浅色、往右下错开一个像素，是凹槽对面受光的那道边 */
+.tree-art {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  pointer-events: none;
 }
 
-.levels-board h2 {
-  margin: 0 0 0 4px;
-  font-size: 22px;
-  letter-spacing: 0.2em;
-  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.75);
+.tree-art .lit {
+  opacity: 0.2;
+  fill: #ffe2b8;
+  stroke: #ffe2b8;
 }
 
-.levels-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 9px;
+.tree-art .cut {
+  opacity: 0.6;
+  fill: #140a05;
+  stroke: #140a05;
+}
+
+.tree-art .solid {
+  stroke: none;
+}
+
+.tree-art .line {
+  fill: none;
+  stroke-width: 6.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tree-art .line.root {
+  stroke-width: 8;
+}
+
+/* 通过的关，叶子填上那一关的染料（调亮一些，在深色的木头上才看得清） */
+.tree-art .dyed path {
+  fill: var(--leaf);
+  fill: color-mix(in srgb, var(--leaf) 78%, #fff);
+  stroke: rgba(20, 10, 5, 0.55);
+  stroke-width: 1;
+}
+
+.tree-art .veins {
+  fill: none;
+  stroke: rgba(20, 10, 5, 0.34);
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+
+.tree-knots {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* 每一关是嵌在板子里的一小块浅色木片 */
-.tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  width: 100%;
-  aspect-ratio: 1;
+/* 每一项只是一个定位用的点：木片的正中 */
+.tree-knots li {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* 一关：嵌在枝头的一块圆木片，和通关面板上的星星一样，是浅色的桦木 */
+.knot {
+  position: absolute;
+  left: calc(var(--r) * -1);
+  top: calc(var(--r) * -1);
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
   padding: 0;
   border: 0;
-  border-radius: 7px;
-  font: 700 21px/1 var(--font);
+  background: none;
+  font: 700 23px/1 var(--font);
   font-variant-numeric: lining-nums;
   color: var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.knot-disc {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
   background: var(--birch) var(--wood-light) center / 300px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
     inset 0 -1px 0 rgba(90, 55, 20, 0.35),
     0 2px 0 rgba(20, 10, 5, 0.55),
     2px 4px 6px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
-.tile:active:not(:disabled) {
+.knot:active:not(:disabled) .knot-disc {
   transform: translateY(1px);
 }
 
-.tile:focus-visible {
-  outline: 2px solid var(--cream);
-  outline-offset: 2px;
+.knot:focus-visible {
+  outline: none;
 }
 
-.tile[aria-current='true'] {
+.knot:focus-visible .knot-disc {
+  outline: 2px solid var(--cream);
+  outline-offset: 4px;
+}
+
+/* 还没按过键的时候不画键盘焦点的那一圈：它看着像"轮到了"（见 ui/tree.ts） */
+.tree.unkeyed .knot:focus-visible .knot-disc {
+  outline: none;
+}
+
+/* 轮到的这一关：外面一圈亮边，周围一团光慢慢地一明一暗。
+   光是单独的一层，只变透明度——这样浏览器不用每一帧重画，开着这一屏不费电 */
+.knot.open .knot-disc {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
     0 0 0 3px var(--cream),
     2px 4px 6px rgba(0, 0, 0, 0.4);
 }
 
-/* 还没开的关：一块没打磨过的暗木片 */
-.tile:disabled {
-  color: rgba(44, 26, 14, 0.55);
-  filter: brightness(0.5) saturate(0.6);
+.knot.open .knot-disc::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  box-shadow: 0 0 24px 8px rgba(236, 220, 188, 0.46);
+  animation: knot-turn 2.6s ease-in-out infinite;
+}
+
+@keyframes knot-turn {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* 没轮到的：一块没打磨过的暗木片，只有序号 */
+.knot.locked {
   cursor: default;
 }
 
-.tile .stars {
-  gap: 1px;
+.knot.locked .knot-disc {
+  color: rgba(44, 26, 14, 0.62);
+  background-color: #7d6546;
+  background-blend-mode: multiply;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 2px 0 rgba(20, 10, 5, 0.5),
+    1px 3px 5px rgba(0, 0, 0, 0.35);
 }
 
-.tile .stars svg {
-  width: 11px;
-  height: 11px;
-  fill: rgba(60, 36, 14, 0.22);
+/* 通过的关：木片下面刻着星星和最好步数 */
+.knot-note {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.knot-note .stars {
+  gap: 2px;
+}
+
+.knot-note .stars svg {
+  width: 13px;
+  height: 13px;
+  fill: rgba(20, 10, 5, 0.55);
   stroke: none;
   filter: none;
 }
 
-.tile .stars svg.won {
+.knot-note .stars svg.won {
   fill: var(--star);
+  fill: color-mix(in srgb, var(--star) 72%, #fff);
   filter: none;
 }
 
-.tile small {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: rgba(44, 26, 14, 0.72);
+.knot-note small {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--cream-dim);
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.7);
 }
 
-/* 屏幕够大时一排放 10 关：80 关正好 8 排，不用滚动就能全看到。
-   木片是正方形的，面板多宽就决定了多高，所以矮一些的屏幕上面板也窄一些，8 排才放得下 */
-@media (min-width: 900px) and (min-height: 700px) {
-  .levels-board {
-    width: min(880px, 100%, 125vh - 120px);
-  }
-
-  .levels-grid {
-    grid-template-columns: repeat(10, 1fr);
+/* 屏幕比木板宽：木板是居中的一长条，两边露出桌面，上下两头也看得到板子的边 */
+@media (min-width: 600px) {
+  .tree-board {
+    margin: 26px auto;
+    border-radius: 12px;
+    box-shadow:
+      inset 1px 0 0 rgba(255, 232, 196, 0.2),
+      inset -1px 0 0 rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 232, 196, 0.2),
+      inset 0 0 70px rgba(0, 0, 0, 0.28),
+      0 5px 0 var(--walnut-edge),
+      14px 16px 46px rgba(0, 0, 0, 0.65);
   }
 }
 
@@ -594,11 +712,6 @@ body {
   .tools {
     gap: 9px;
   }
-
-  .levels-grid {
-    grid-template-columns: repeat(5, 1fr);
-    gap: 8px;
-  }
 }
 
 /* 手机横过来：上下没地方了，步数放到左边，按钮竖着排在右边 */
@@ -633,14 +746,6 @@ body {
   .result .chip {
     padding-left: calc(14px + 0.14em);
     padding-right: 14px;
-  }
-
-  .levels-grid {
-    grid-template-columns: repeat(10, 1fr);
-  }
-
-  .levels-board {
-    width: min(760px, 100%);
   }
 
   /* 提示牌待在左下角、步数的下面：上下没多少地方，图示和字都小一号，才不会顶到步数 */
@@ -686,6 +791,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .result,
   .guide,
+  .tree,
+  .knot.open .knot-disc::after,
   .result .stars svg.won {
     animation: none;
   }

@@ -98,9 +98,23 @@ export function shortfall(level: Level): number {
 }
 
 /**
+ * 怎么滚都染不到的地面格（不在任何一步的路上），从小到大。配置页拿它把这些格子圈出来。
+ * 一格都没有只说明"每一格都滚得到"，不等于能通关——也可能滚得到却没法在一局里全染上。
+ */
+export function unreachedCells(level: Level): number[] {
+  const { rolls } = stopGraph(level);
+  const reach = new Uint8Array(level.rows * level.cols);
+  reach[level.start] = 1;
+  for (const r of rolls) for (const cell of r.cells) reach[cell] = 1;
+  const cells: number[] = [];
+  for (let cell = 0; cell < reach.length; cell++) if (level.floor[cell] && !reach[cell]) cells.push(cell);
+  return cells;
+}
+
+/**
  * 一关整理成一张图：停靠点、每一步，以及每个关键格由哪几步染到。
  * "最少几步"就是在这张图上从起点出发、把每个关键格都至少染到一次的最短走法。
- * 更大的图上的另一种解法（tools/mip.ts）从这里出发。
+ * 更大的图上的另一种解法（src/solve/tour.ts，整数规划）从这里出发。
  */
 export interface StepGraph {
   /** 停靠点的个数；起点是第 0 个 */

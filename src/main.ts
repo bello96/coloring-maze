@@ -1,10 +1,13 @@
 import './style.css';
 import { App } from './app.ts';
+import { loadLevelSet } from './game/remote.ts';
 import { showBroken } from './ui/broken.ts';
 
 const FONT = '"Noto Serif SC", "Songti SC", "STSong", "SimSun", serif';
 
 async function boot(): Promise<void> {
+  // 线上发布的关卡表：一开头就去拿，和下面等字体、画木纹同时进行。拿不到会自己退回上次留的那份或内置的 80 关
+  const levels = loadLevelSet();
   // 托盘上刻的字要用这套字体画，所以等它到了才摆第一个托盘；一秒半还没到就先用系统里的宋体。
   // 字体在下载的同时，先把木纹画好、把舞台搭起来（这要花零点几秒到一两秒），两件事不必一前一后。
   const font = Promise.race([
@@ -13,7 +16,7 @@ async function boot(): Promise<void> {
   ]);
   const app = new App(document.getElementById('stage') as HTMLCanvasElement, FONT);
   await font;
-  app.start();
+  app.start((await levels).set);
   // 给自动化检查留的口子：在控制台里输入 __maze() 能看到当前的局面
   Object.assign(window, { __maze: () => app.snapshot() });
   // 开发时再多留一个：整个程序对象，方便在控制台里摆弄

@@ -63,7 +63,7 @@ export class Stage {
     this.scene.background = new THREE.Color(0x120c09);
 
     // 手机上切到后台久了，系统会把画面占用的显卡资源收走。回来时与其一样样重建，不如整页重开：
-    // 进度是存着的，重开后还是这一关。
+    // 进度是存着的，重开后回到选关树，刚才那一关还亮在那里，再点进去就是。
     canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
     canvas.addEventListener('webglcontextrestored', () => location.reload());
 
@@ -191,16 +191,37 @@ export class Stage {
     return typeof name === 'string' ? name : '';
   }
 
-  /** 把两种木纹缩小成图片地址，界面上的木片按钮和面板拿去当底纹，这样和托盘是同一种木头 */
-  woodUrls(): { dark: string; light: string } {
+  /**
+   * 把木纹缩小成图片地址给界面当底纹，这样界面上的木头和托盘是同一种木头：
+   * dark、light 给木片按钮、木牌、圆木片；plank 给选关树的那块长木板。
+   */
+  woodUrls(): { dark: string; light: string; plank: string } {
     const shrink = (source: HTMLCanvasElement): string => {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 512;
       canvas.getContext('2d')!.drawImage(source, 0, 0, 512, 512);
       return canvas.toDataURL('image/jpeg', 0.82);
     };
-    return { dark: shrink(this.woods.dark), light: shrink(this.woods.light) };
+    return { dark: shrink(this.woods.dark), light: shrink(this.woods.light), plank: plank(this.woods.dark) };
   }
+}
+
+/**
+ * 选关树那块长木板的底纹。木板有好几千像素长，底纹得一张接一张地往下铺：
+ * 把木纹和它上下翻过来的样子接成一张，这样无论接在哪一头，接缝两边的纹理都是连着的。
+ * 木纹本来就是竖着走的（顺着木板的长边），不用转。
+ */
+function plank(source: HTMLCanvasElement): string {
+  const size = 768;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size * 2;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(source, 0, 0, size, size);
+  ctx.translate(0, size * 2);
+  ctx.scale(1, -1);
+  ctx.drawImage(source, 0, 0, size, size);
+  return canvas.toDataURL('image/jpeg', 0.8);
 }
 
 /** 夹板的断面：几层薄木片叠在一起，一层深一层浅 */

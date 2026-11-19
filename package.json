@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "染色迷宫：让弹珠沿直线滚到头，把木托盘迷宫的每一格都染上色（纯静态页面，部署到 Cloudflare Workers 静态资源）",
+  "description": "染色迷宫：让弹珠沿直线滚到头，把木托盘迷宫的每一格都染上色（静态页面加一个很小的关卡接口，部署到 Cloudflare Workers）",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -13,12 +13,12 @@
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
+    "highs": "^1.15.4",
     "three": "^0.187.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/three": "^0.187.0",
-    "highs": "^1.15.4",
     "subset-font": "^2.9.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

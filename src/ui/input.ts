@@ -8,14 +8,15 @@ const SWIPE_PX = 22;
 /**
  * 两种操作：电脑上按方向键，触屏上用手指滑。
  * 一次滑动只算一个方向，要再动得抬起手指重新滑。
+ * @param onDir 收到一个方向。返回这一下用掉了没有（没用掉的方向键留给浏览器）
  */
-export function listen(surface: HTMLElement, onDir: (dir: Dir) => void): void {
+export function listen(surface: HTMLElement, onDir: (dir: Dir) => boolean): void {
   window.addEventListener('keydown', (e) => {
     const dir = KEYS[e.key];
     if (!dir || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
-    // 焦点在按钮上时，方向键不该被浏览器拿去滚动页面
-    e.preventDefault();
-    onDir(dir);
+    // 这一下游戏用掉了，就别让浏览器再拿它去滚动页面（焦点在按钮上时会）；
+    // 没用掉——正在选关树上——就留给浏览器，方向键照常滚动那棵树
+    if (onDir(dir)) e.preventDefault();
   });
 
   let finger = -1;

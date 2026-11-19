@@ -1,0 +1,791 @@
+/* 关卡配置页。和游戏是同一间木工房：深色的桌面上，左右各一块胡桃木板，中间摆着正在做的那只托盘。
+   鲜艳的颜色只有染料——托盘里起点那一格、右边那排染料，还有检查结果借用的三种
+   （叶绿是过了，茜红是拦下了，藤黄是提醒）；其余都是木头和米色的字，让位给中间的托盘。
+   这一页不加载游戏的那套宋体（子集里没有这一页要用的字），也没有显卡画的木纹：
+   字用系统的黑体，木纹用下面几张噪声图近似。只按电脑屏幕排版（1280×800 以上）。 */
+
+:root {
+  --table: #120c09;
+  --cream: #ecdcbc;
+  --cream-dim: #c2ad8d;
+  --walnut: #6a4328;
+  --walnut-edge: #2a1a11;
+  --birch: #dcc08f;
+  --ink: #2c1a0e;
+  /* 检查结果的三种颜色，取自八种染料：叶绿、茜红、藤黄 */
+  --pass: #3f8f2e;
+  --fail: #c0302b;
+  --warn: #dd8e10;
+  /* 深色木头上的红字：茜红掺了白，才看得清 */
+  --fail-text: #f4aea3;
+  --font: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* 木纹：顺着纹理拉得很长的噪声，一块深一块浅的色带、细的纹路、受光的浅色带、细小的木孔各一层，叠在木头的底色上。
+     -h 是横着的纹（托盘、木片），-v 是竖着的纹（两边的木板、桌面）；桦木的那张淡得多，托盘的地面也用它（见 grid.ts） */
+  --grain-h: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Cfilter id='f0' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.003 0.026' numOctaves='3' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.07 0 0 0 0 0.035 0 0 0 0 0.015 1.3 0 0 0 -0.56'/%3E%3C/filter%3E%3Cfilter id='f1' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.19' numOctaves='2' seed='23' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.07 0 0 0 0 0.035 0 0 0 0 0.015 1 0 0 0 -0.42'/%3E%3C/filter%3E%3Cfilter id='f2' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.002 0.016' numOctaves='2' seed='40' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.87 0 0 0 0 0.68 -0.7 0 0 0 0.36'/%3E%3C/filter%3E%3Cfilter id='f3' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.05 1.3' numOctaves='1' seed='5' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.06 0 0 0 0 0.03 0 0 0 0 0.01 1.7 0 0 0 -0.98'/%3E%3C/filter%3E%3Crect width='512' height='512' filter='url(%23f0)'/%3E%3Crect width='512' height='512' filter='url(%23f1)'/%3E%3Crect width='512' height='512' filter='url(%23f2)'/%3E%3Crect width='512' height='512' filter='url(%23f3)'/%3E%3C/svg%3E");
+  --grain-v: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Cfilter id='f0' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.026 0.003' numOctaves='3' seed='111' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.07 0 0 0 0 0.035 0 0 0 0 0.015 1.3 0 0 0 -0.56'/%3E%3C/filter%3E%3Cfilter id='f1' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.19 0.005' numOctaves='2' seed='123' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.07 0 0 0 0 0.035 0 0 0 0 0.015 1 0 0 0 -0.42'/%3E%3C/filter%3E%3Cfilter id='f2' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.016 0.002' numOctaves='2' seed='140' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.87 0 0 0 0 0.68 -0.7 0 0 0 0.36'/%3E%3C/filter%3E%3Cfilter id='f3' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.3 0.05' numOctaves='1' seed='105' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.06 0 0 0 0 0.03 0 0 0 0 0.01 1.7 0 0 0 -0.98'/%3E%3C/filter%3E%3Crect width='512' height='512' filter='url(%23f0)'/%3E%3Crect width='512' height='512' filter='url(%23f1)'/%3E%3Crect width='512' height='512' filter='url(%23f2)'/%3E%3Crect width='512' height='512' filter='url(%23f3)'/%3E%3C/svg%3E");
+  --grain-birch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Cfilter id='f0' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.022 0.003' numOctaves='3' seed='17' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.6 0 0 0 0 0.4 0 0 0 0 0.18 0.9 0 0 0 -0.38'/%3E%3C/filter%3E%3Cfilter id='f1' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.17 0.005' numOctaves='2' seed='41' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.6 0 0 0 0 0.4 0 0 0 0 0.18 0.7 0 0 0 -0.3'/%3E%3C/filter%3E%3Cfilter id='f2' filterUnits='userSpaceOnUse' x='0' y='0' width='512' height='512' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.014 0.002' numOctaves='2' seed='8' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.97 0 0 0 0 0.86 -0.7 0 0 0 0.38'/%3E%3C/filter%3E%3Crect width='512' height='512' filter='url(%23f0)'/%3E%3Crect width='512' height='512' filter='url(%23f1)'/%3E%3Crect width='512' height='512' filter='url(%23f2)'/%3E%3C/svg%3E");
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* 只按电脑屏幕做：窗口再小就出滚动条，不重新排版 */
+  min-width: 1200px;
+  min-height: 680px;
+  /* 桌面：中间亮、四角暗下去，像一盏灯照在桌子中间（和游戏里一样） */
+  background: radial-gradient(ellipse 82% 88% at 50% 44%, #2a1d14 0%, #1a110b 54%, #0b0705 100%);
+  font: 14px/1.5 var(--font);
+  color: var(--cream);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 桌面的木纹：淡淡的一层 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--grain-v) center / 512px;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+/* ───── 三样东西怎么摆 ───── */
+
+.bench {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr) 400px;
+  column-gap: 20px;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 18px 20px 22px;
+}
+
+/* 胡桃木板：左右两栏各一块，口令弹层也是一块 */
+.plank {
+  border-radius: 12px;
+  background: var(--walnut) var(--grain-v) center / 512px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 4px 0 var(--walnut-edge),
+    5px 14px 26px rgba(0, 0, 0, 0.6);
+  /* 字底下垫一点暗，压在木纹上才清楚 */
+  text-shadow: 0 1px 1px rgba(14, 7, 3, 0.55);
+}
+
+.table {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 8px 18px;
+}
+
+/* ───── 木片按钮 ───── */
+
+.chip {
+  display: inline-block;
+  box-sizing: border-box;
+  padding: 8px 15px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-align: center;
+  text-decoration: none;
+  color: var(--cream);
+  text-shadow: 0 -1px 0 rgba(22, 11, 5, 0.7);
+  background: #7a4f30 var(--grain-h) center / 512px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.26),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 2px 0 var(--walnut-edge),
+    2px 5px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition:
+    transform 0.06s,
+    box-shadow 0.06s;
+}
+
+.chip:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.26),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 1px 0 var(--walnut-edge),
+    1px 2px 4px rgba(0, 0, 0, 0.45);
+}
+
+.chip:disabled {
+  color: rgba(236, 220, 188, 0.36);
+  cursor: default;
+}
+
+/* 要紧的那几个按钮是浅色的桦木片 */
+.chip-light {
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255, 246, 226, 0.5);
+  background: var(--birch) var(--grain-birch) center / 512px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.35),
+    0 2px 0 rgba(20, 10, 5, 0.6),
+    2px 5px 8px rgba(0, 0, 0, 0.45);
+}
+
+.chip-light:active:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.35),
+    0 1px 0 rgba(20, 10, 5, 0.6),
+    1px 2px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* 点不了的时候是一块没打磨的暗木片 */
+.chip-light:disabled {
+  color: rgba(44, 26, 14, 0.6);
+  text-shadow: none;
+  background-color: #8a6f4c;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 2px 0 rgba(20, 10, 5, 0.5),
+    1px 3px 5px rgba(0, 0, 0, 0.35);
+}
+
+.chip-small {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
+/* 嵌在木板里的输入框：一个铣出来的浅槽，槽底是桦木，和托盘的地面一样 */
+.inset {
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--birch) var(--grain-birch) center / 512px;
+  box-shadow:
+    inset 0 2px 3px rgba(50, 28, 8, 0.6),
+    inset 1px 0 2px rgba(50, 28, 8, 0.3),
+    0 1px 0 rgba(255, 232, 196, 0.2);
+}
+
+/* ───── 左边：关卡列表 ───── */
+
+.levels {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.levels-title {
+  margin: 0;
+  padding: 16px 18px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+#level-count {
+  margin-left: 4px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--cream-dim);
+}
+
+#level-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 2px 8px 8px;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #3d2616 transparent;
+}
+
+#level-list li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-content: center;
+  padding: 5px 8px 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#level-list li:hover {
+  background: rgba(255, 232, 196, 0.06);
+}
+
+#level-list canvas {
+  grid-row: 1 / 3;
+  display: block;
+  width: 48px;
+  height: 48px;
+}
+
+.level-no {
+  align-self: end;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.level-steps {
+  align-self: start;
+  font-size: 12.5px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cream-dim);
+}
+
+/* 正在改的这一关：一圈亮边（和游戏里"轮到的那一关"一样） */
+#level-list li.current {
+  background: rgba(255, 232, 196, 0.12);
+  box-shadow: inset 0 0 0 1.5px rgba(236, 220, 188, 0.8);
+}
+
+/* 不能发布的关标红：左边一道红，字也是红的 */
+#level-list li.bad::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 7px;
+  bottom: 7px;
+  width: 5px;
+  border-radius: 2.5px;
+  background: #e2574a;
+  box-shadow: 0 1px 1px rgba(14, 7, 3, 0.55);
+}
+
+#level-list li.bad .level-no,
+#level-list li.bad .level-steps {
+  color: var(--fail-text);
+}
+
+/* 拖着换顺序：被拖的那一行变淡，要落下去的地方亮一道线 */
+#level-list li.dragging {
+  opacity: 0.4;
+}
+
+#level-list li.drop-above::after,
+#level-list li.drop-below::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--cream);
+}
+
+#level-list li.drop-above::after {
+  top: -1px;
+}
+
+#level-list li.drop-below::after {
+  bottom: -1px;
+}
+
+.levels-actions {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px 16px;
+  /* 一道刻出来的线：深色的槽，底下一道受光的边 */
+  border-top: 1px solid rgba(20, 10, 5, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 196, 0.12);
+}
+
+/* ───── 中间：托盘 ───── */
+
+.tray {
+  /* 托盘边有多宽，由程序按格子的大小定（见 grid.ts） */
+  padding: var(--rim, 24px);
+  border-radius: 14px;
+  background: var(--walnut) var(--grain-h) center / 512px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 196, 0.26),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 5px 0 var(--walnut-edge),
+    8px 18px 34px rgba(0, 0, 0, 0.62);
+}
+
+#grid {
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* ───── 右边：这一关的设置、检查、发布 ───── */
+
+.panel {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3d2616 transparent;
+}
+
+.panel-part {
+  padding: 18px 22px;
+}
+
+.panel-part + .panel-part {
+  border-top: 1px solid rgba(20, 10, 5, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 196, 0.12);
+}
+
+.publish {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#btn-publish {
+  min-width: 104px;
+}
+
+/* 留出两行的地方：话出来、换掉的时候，底下的东西不跟着跳 */
+#publish-note {
+  min-height: 40px;
+  margin: 12px 0 -4px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--cream-dim);
+}
+
+#publish-note.said {
+  color: var(--cream);
+}
+
+#publish-note.failed {
+  color: var(--fail-text);
+}
+
+#level-title {
+  margin: 0 0 14px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  min-height: 34px;
+}
+
+.field + .field {
+  margin-top: 12px;
+}
+
+.field-name {
+  font-size: 13px;
+  color: var(--cream-dim);
+}
+
+.field-body {
+  display: flex;
+  align-items: center;
+}
+
+.size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size + .size {
+  margin-left: 20px;
+}
+
+.size .inset {
+  width: 64px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 画笔：木板上铣出的一道槽里并排三块，选中的那块是桦木片，另外两块只是刻着字 */
+.brushes {
+  justify-self: start;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: rgba(20, 10, 5, 0.34);
+  box-shadow:
+    inset 0 2px 3px rgba(0, 0, 0, 0.45),
+    0 1px 0 rgba(255, 232, 196, 0.14);
+}
+
+.brushes button {
+  min-width: 62px;
+  padding: 4px 14px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+  text-shadow: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+.brushes button:hover {
+  color: var(--cream);
+}
+
+.brushes button[aria-pressed='true'] {
+  font-weight: 600;
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255, 246, 226, 0.5);
+  background: var(--birch) var(--grain-birch) center / 512px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 染料：八块染过色的圆木片，加一个自选 */
+#dyes {
+  gap: 6px;
+}
+
+#dyes button {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--swatch) var(--grain-birch) center / 512px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 2px 0 rgba(20, 10, 5, 0.55),
+    1px 3px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+/* 这一关用的那种：外面一圈亮边 */
+#dyes button[aria-pressed='true'],
+.dye-own.on {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 0 2px var(--walnut-edge),
+    0 0 0 4px var(--cream);
+}
+
+.dye-own {
+  position: relative;
+  display: flex;
+  /* 前面多出一个色点的时候也不许挤成两行 */
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding: 2px 9px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--cream-dim);
+  background: rgba(20, 10, 5, 0.34);
+  box-shadow:
+    inset 0 2px 3px rgba(0, 0, 0, 0.45),
+    0 1px 0 rgba(255, 232, 196, 0.14);
+  cursor: pointer;
+}
+
+.dye-own:hover,
+.dye-own.on {
+  color: var(--cream);
+}
+
+/* 用的是自选的颜色时，字的前面亮出这个颜色 */
+.dye-own.on::before {
+  content: '';
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--own);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+/* 浏览器自带的取色框盖在"自选"两个字上、看不见：点这两个字就是点它 */
+#dye-custom {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dye-own:has(:focus-visible) {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
+}
+
+/* ───── 检查 ─────
+   四步是木板上铣出来的一条四格的道，和托盘里的地面一样是桦木。
+   查过的一格染上颜色：叶绿是过了，茜红是拦下了，藤黄是提醒；正在算的那一格上停着弹珠；没查到的还是白木头。 */
+
+.checks-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+#checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 一行：左边是道里的一格，右边是这一步的话（没查到的那几步没有话，只有格子） */
+#checks li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  column-gap: 12px;
+  align-items: start;
+  min-height: 32px;
+  box-sizing: border-box;
+  /* 话可能有两三行，让第一行和格子里的记号对齐 */
+  padding: 6px 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+#checks li::before {
+  content: '';
+  align-self: stretch;
+  margin: -6px 0;
+  background: var(--birch) var(--grain-birch) center / 512px;
+  box-shadow:
+    inset 2px 0 2px -1px rgba(50, 28, 8, 0.55),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.3);
+}
+
+#checks li:first-child::before {
+  border-radius: 5px 5px 0 0;
+  box-shadow:
+    inset 0 3px 3px -1px rgba(50, 28, 8, 0.6),
+    inset 2px 0 2px -1px rgba(50, 28, 8, 0.55),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.3);
+}
+
+#checks li:last-child::before {
+  border-radius: 0 0 5px 5px;
+  box-shadow:
+    inset 2px 0 2px -1px rgba(50, 28, 8, 0.55),
+    0 1px 0 rgba(255, 232, 196, 0.2);
+}
+
+/* 染上颜色的格子：上面一层是记号（勾、叉、叹号），下面是木纹和染料 */
+#checks li.pass::before,
+#checks li.fail::before,
+#checks li.warn::before {
+  background-repeat: no-repeat, repeat;
+  background-position:
+    center 8px,
+    center;
+  background-size:
+    16px 16px,
+    512px;
+}
+
+#checks li.pass::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.4 8.6l3 3 6.2-6.6' fill='none' stroke='%23fff6e2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"), var(--grain-birch);
+  background-color: var(--pass);
+}
+
+#checks li.fail::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6' fill='none' stroke='%23fff6e2' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"), var(--grain-birch);
+  background-color: var(--fail);
+}
+
+#checks li.warn::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 3.4v5.4M8 12.2v.2' fill='none' stroke='%232c1a0e' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"), var(--grain-birch);
+  background-color: var(--warn);
+}
+
+/* 正在算的那一格上停着弹珠，一明一暗 */
+#checks li.busy::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 9px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, #fff 0 14%, rgba(255, 255, 255, 0.7) 34%, rgba(206, 226, 220, 0.6) 62%, rgba(96, 116, 110, 0.75) 100%);
+  box-shadow:
+    1px 2px 3px rgba(40, 20, 5, 0.6),
+    0 0 0 0.5px rgba(40, 20, 5, 0.45);
+  animation: marble-wait 1.5s ease-in-out infinite;
+}
+
+@keyframes marble-wait {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+#checks li.busy {
+  color: var(--cream-dim);
+}
+
+#checks li.fail {
+  font-weight: 600;
+}
+
+/* 修改建议：接在四步下面，和上面的话对齐；「采用建议」另起一行靠右 */
+.advice {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding-left: 40px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+#advice-text {
+  flex: 1 1 100%;
+}
+
+#par {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--cream-dim);
+}
+
+#par-number {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 26px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cream);
+}
+
+/* 还没有最少步数的时候是一道横线，淡一些 */
+#par-number.unknown {
+  font-weight: 400;
+  color: var(--cream-dim);
+}
+
+/* ───── 读不到关卡时的那句话 ───── */
+
+.notice {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+}
+
+/* ───── 口令弹层 ───── */
+
+.gate {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* 发布时口令失效了也会弹出来：这时底下的页面暗下去 */
+.bench:not([hidden]) ~ .gate {
+  background: rgba(10, 6, 4, 0.74);
+}
+
+.gate-plaque {
+  width: 316px;
+  box-sizing: border-box;
+  padding: 22px 24px 16px;
+}
+
+.gate-plaque label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.gate-row {
+  display: flex;
+  gap: 10px;
+}
+
+#gate-input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  font-size: 15px;
+}
+
+#gate-error {
+  min-height: 20px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--fail-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #checks li.busy::after {
+    animation: none;
+  }
+
+  .chip {
+    transition: none;
+  }
+}

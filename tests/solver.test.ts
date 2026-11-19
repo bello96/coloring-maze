@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseLevel, type Dir, type Level } from '../src/game/level.ts';
+import { LEVELS } from '../src/game/levels.ts';
 import { isDone, newGame, roll, steps } from '../src/game/rules.ts';
-import { analyze, shortfall, SolverLimitError, type Engine } from '../src/game/solver.ts';
+import { analyze, shortfall, SolverLimitError, stepGraph, unreachedCells, type Engine } from '../src/game/solver.ts';
 import { carve } from '../tools/gen.ts';
 import { bruteForce } from './helpers/brute.ts';
 import { randomMaze, seeded } from './helpers/random.ts';
@@ -267,5 +268,62 @@ describe('analyze: 15×15 mazes', () => {
   it('refuses a group size it has no table for', () => {
     expect(() => analyze(parseLevel(cases[0].rows), 4_000_000, 'guided', 17)).toThrow(RangeError);
     expect(() => analyze(parseLevel(cases[0].rows), 4_000_000, 'guided', 0)).toThrow(RangeError);
+  });
+});
+
+describe('unreachedCells: the floor no roll ever passes over', () => {
+  it('lists the side branch the ball can never stop at the top of', () => {
+    // 小球只会在第一行两头之间来回，中间那一列下面的两格（4 和 7）永远滚不到
+    expect(unreachedCells(parseLevel(['S..', '#.#', '#.#']))).toEqual([4, 7]);
+  });
+
+  it('lists nothing for the first level of the game', () => {
+    expect(unreachedCells(parseLevel(LEVELS[0].rows))).toEqual([]);
+  });
+
+  it('lists the five cells of the maze in the reference video', () => {
+    // 手算：停靠点一共 16 个，没有一个在第 2、5 列上，也没有一个在第 3、4 行上，
+    // 所以中间 (3,2)、(4,2) 两格和右边 (3,5)、(3,6)、(4,5) 三格没有哪一步会滚过
+    const level = parseLevel(['S......', '#......', '.....##', '.......', '......#', '..#....', '.......']);
+    expect(unreachedCells(level)).toEqual([23, 26, 27, 30, 33]);
+  });
+
+  it('lists nothing when every cell can be rolled over, even though not all in one game', () => {
+    // 十字形：通不了关，但每一格都滚得到
+    expect(unreachedCells(parseLevel(['#.#', '.S.', '#.#']))).toEqual([]);
+  });
+
+  it('lists floor that is walled off from the start, and all the rest when the ball cannot move', () => {
+    expect(unreachedCells(parseLevel(['S#.', '.#.', '.#.']))).toEqual([2, 5, 8]);
+    expect(unreachedCells(parseLevel(['S#.', '#..']))).toEqual([2, 4, 5]);
+  });
+
+  it('lists nothing when the start is the only cell', () => {
+    expect(unreachedCells(parseLevel(['S']))).toEqual([]);
+  });
+
+  it('is empty exactly when the maze has a step graph (600 random mazes)', () => {
+    const rand = seeded(41);
+    let some = 0;
+    for (let i = 0; i < 600; i++) {
+      const rows = randomMaze(rand, 3 + Math.floor(rand() * 5), 3 + Math.floor(rand() * 5), 0.1 + rand() * 0.3);
+      const level = parseLevel(rows);
+      const cells = unreachedCells(level);
+      const label = rows.join('/');
+      expect(cells.length === 0, label).toBe(stepGraph(level) !== null);
+      // 都是地面，不会是起点（起点开局就染上了），从小到大、不重复
+      expect(cells, label).toEqual([...new Set(cells)].sort((a, b) => a - b));
+      for (const cell of cells) expect(level.floor[cell], label).toBe(1);
+      expect(cells, label).not.toContain(level.start);
+      // 有格子滚不到，就一定通不了关，"还差多少"里至少算了这几格
+      if (cells.length > 0) {
+        expect(analyze(level).solvable, label).toBe(false);
+        expect(shortfall(level), label).toBeGreaterThanOrEqual(cells.length);
+        some++;
+      }
+    }
+    // 两种都得真的碰到过
+    expect(some).toBeGreaterThan(100);
+    expect(some).toBeLessThan(500);
   });
 });
