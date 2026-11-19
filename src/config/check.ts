@@ -74,8 +74,8 @@ export interface CheckLine {
   readonly text: string;
 }
 
-/** 修改建议那一行：none 用不着，或者给不出；searching 正在找；found 找到了；missing 六格以内没找到 */
-export type Advice = { readonly kind: 'none' | 'searching' | 'missing' } | { readonly kind: 'found'; readonly repair: Repair };
+/** 修改建议那一行：none 用不着，或者不会来了（没让后台线程查过、线程坏了）；searching 正在找；found 有了 */
+export type Advice = { readonly kind: 'none' | 'searching' } | { readonly kind: 'found'; readonly repair: Repair };
 
 /** 一关能不能发布：ready 可以；busy 最少步数还没算出来；blocked 被拦下了 */
 export type Standing = 'ready' | 'busy' | 'blocked';
@@ -94,7 +94,7 @@ export interface Checked {
   readonly early: ReturnType<typeof precheck>;
   /** 这张图的最少步数；还没算出来是 null */
   readonly par: number | null;
-  /** 是不是保证不会走进死局（shortfall 为 0）。最少步数还没有的时候不看它 */
+  /** 是不是保证不会走进死局（shortfall 为 0）。便宜的那两步没过的时候不看它；最少步数还没算出来的时候，凭它知道要不要等一条修改建议 */
   readonly safe: boolean;
   /** 后台线程查这张图查到哪了；没让它查过就不给 */
   readonly state?: CheckState;
@@ -140,12 +140,13 @@ export function reportOf({ early, par, safe, state }: Checked): Report {
   if (lines.some((line) => line.mark === 'fail')) standing = 'blocked';
   else if (par !== null) standing = 'ready';
 
-  // 通不了关的要一条建议，能通关但不保证不走进死局的也要。线程坏了、放弃了，建议就不会来了
+  // 形状不行、有格子滚不到、不保证不会走进死局（通不了关的图一定在这里面）：都要一条建议，而且一定给得出。
+  // 它不等最少步数：后台线程先找建议、再算步数，所以步数还在算、甚至最后没算出来，建议也照样显示。
+  // 还没到的时候，线程在忙就是正在找；线程坏了就不会来了
   let advice: Advice = { kind: 'none' };
-  if (state && (early || unsolvable || (par !== null && !safe))) {
-    if (state.phase === 'queued' || state.phase === 'solving' || state.phase === 'repairing') advice = { kind: 'searching' };
-    else if (state.phase === 'done' && state.repair === null) advice = { kind: 'missing' };
-    else if (state.phase === 'done' && state.repair && state.repair.changes.length > 0) advice = { kind: 'found', repair: state.repair };
+  if (state && (early || !safe)) {
+    if (state.repair && state.repair.changes.length > 0) advice = { kind: 'found', repair: state.repair };
+    else if (state.phase === 'queued' || state.phase === 'solving' || state.phase === 'repairing') advice = { kind: 'searching' };
   }
   return { lines, advice, standing };
 }

@@ -268,8 +268,8 @@ export class GameView {
     if (!on && this.board) this.wake();
   }
 
-  /** 界面要用的木纹图片：木片、木牌的两种，和选关树那块长木板的 */
-  woodUrls(): { dark: string; light: string; plank: string } {
+  /** 界面要用的木纹图片：木片、木牌的两种，选关树那块长木板的，和桌面的 */
+  woodUrls(): { dark: string; light: string; plank: string; table: string } {
     return this.stage.woodUrls();
   }
 
@@ -294,7 +294,7 @@ export class GameView {
     this.board = next;
     this.stage.board.add(tray.group);
     // 新托盘的大小可能和旧的不一样（长方形的关卡）：趁着换托盘，把镜头也移到正好装下新托盘的地方。
-    // 桌上还没有托盘（刚从选关树进来）就没什么可移的，镜头直接到位
+    // 桌上还没有托盘（刚打开网站）就没什么可移的，镜头直接到位
     this.aimBox = { halfWidth: tray.width / 2, halfDepth: tray.depth / 2 };
     this.reframe(old ? 0.9 : 0);
 

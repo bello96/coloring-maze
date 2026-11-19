@@ -2,6 +2,7 @@
 // 接口的逻辑不是另写的一份——用的就是线上那个处理函数（worker/api.ts 的 handle），
 // 只是 KV 换成本机的一个 JSON 文件，口令固定是 dev-token。
 // 另外把 /config 这个地址对到 config.html：线上是 Cloudflare 的静态资源替我们做的这件事（见 wrangler.jsonc）。
+// 关卡的地址（/12 是第 12 关）这里不用管：Vite 对找不到文件的地址本来就回 index.html；线上是 Worker 做的（见 worker/index.ts）。
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname, resolve } from 'node:path';

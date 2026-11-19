@@ -1,12 +1,12 @@
-// 修改建议（src/solve/repair.ts）：手画的图不合格时，找出"改最少的格子就合格"的改法。
-// 这里核对三件事：照建议改完，图真的合格了；改一格、两格就够的时候没有多改（和把所有改法试一遍的笨办法比）；
-// 找不到、来不及的时候如实说没有。
+// 修改建议（src/solve/repair.ts）：手画的图不合格时，给出一条"改尽量少的格子就合格"的改法。
+// 这里核对四件事：照建议改完，图真的合格了；改一格、两格就够的时候没有多改（和把所有改法试一遍的笨办法比）；
+// 细找（closestRepair，六格以内）找不到、来不及的时候如实说没有；而给配置页用的 suggestRepair 不管图离合格多远都拿得出一条改法。
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseLevel } from '../src/game/level.ts';
 import { LEVELS } from '../src/game/levels.ts';
 import { floorConnected, hasPinch } from '../src/game/shape.ts';
 import { shortfall } from '../src/game/solver.ts';
-import { applyChanges, sound, suggestRepair, type Repair } from '../src/solve/repair.ts';
+import { applyChanges, closestRepair, sound, suggestRepair, type Repair } from '../src/solve/repair.ts';
 import { randomMaze, seeded } from './helpers/random.ts';
 
 /** 照定义把"合不合格"再查一遍，不用 repair.ts 自己的判断：地面至少两格、连成一片、没有只在角上相碰的墙、保证不会困死 */
@@ -151,9 +151,50 @@ describe('applyChanges', () => {
   });
 });
 
-describe('suggestRepair', () => {
+/** 照着改，改不成一张图（比如起点被墙盖掉了）就算不合格 */
+function fineAfter(rows: readonly string[], changes: Repair['changes']): boolean {
+  try {
+    return fine(applyChanges(rows, changes));
+  } catch {
+    return false;
+  }
+}
+
+/** 建议里的每一格都少不了：随便去掉哪一条，剩下的照着改完都不合格 */
+function expectNothingSpare(rows: readonly string[], repair: Repair, label: string): void {
+  repair.changes.forEach((_, skip) => {
+    const rest = repair.changes.filter((_, i) => i !== skip);
+    expect(fineAfter(rows, rest), `${label}，去掉第 ${skip + 1} 条`).toBe(false);
+  });
+}
+
+/** 一条建议该有的样子：照着改完就是它给的那张图，那张图合格；同一格不改两次，起点最多挪一次，每一条都真的改了点什么 */
+function expectProperRepair(rows: readonly string[], repair: Repair, label: string): void {
+  const flat = rows.join('');
+  const { changes } = repair;
+  expect(fine(repair.rows), label).toBe(true);
+  expect(sound(repair.rows), label).toBe(true);
+  expect(applyChanges(rows, changes), label).toEqual(repair.rows);
+  expect(changes.length, label).toBeGreaterThanOrEqual(1);
+  expect(new Set(changes.map((change) => change.cell)).size, label).toBe(changes.length);
+  const moves = changes.filter((change) => change.to === 'S');
+  expect(moves.length, label).toBeLessThanOrEqual(1);
+  for (const change of changes) {
+    // 墙改成地面、地面改成墙、起点挪到另一格上
+    if (change.to === '.') expect(flat[change.cell], label).toBe('#');
+    else if (change.to === 'S') expect(flat[change.cell], label).not.toBe('S');
+    else if (flat[change.cell] === 'S') expect(moves.length, label).toBe(1); // 原来的起点要改成墙，得先把起点挪走
+    else expect(flat[change.cell], label).toBe('.');
+  }
+}
+
+function blank(height: number, width: number): string[] {
+  return Array.from({ length: height }, (_, r) => (r === 0 ? 'S' : '.') + '.'.repeat(width - 1));
+}
+
+describe('closestRepair: the careful search, six changes at most', () => {
   it('leaves a map that is already fine alone', () => {
-    for (const i of [0, 7, 22, 40]) expect(suggestRepair(LEVELS[i].rows)).toEqual({ changes: [], rows: [...LEVELS[i].rows] });
+    for (const i of [0, 7, 22, 40]) expect(closestRepair(LEVELS[i].rows)).toEqual({ changes: [], rows: [...LEVELS[i].rows] });
   });
 
   describe('on 300 random bad maps, 5×5 to 9×9', () => {
@@ -166,7 +207,7 @@ describe('suggestRepair', () => {
         const rows = randomMaze(rand, 5 + Math.floor(rand() * 5), 5 + Math.floor(rand() * 5), 0.1 + rand() * 0.3);
         // 本来就合格的跳过
         if (fine(rows)) continue;
-        cases.push({ rows, repair: suggestRepair(rows) });
+        cases.push({ rows, repair: closestRepair(rows) });
       }
     }, 900_000);
 
@@ -176,23 +217,11 @@ describe('suggestRepair', () => {
         if (!repair) continue;
         found++;
         const label = rows.join('/');
-        const flat = rows.join('');
-        const { changes } = repair;
-        expect(fine(repair.rows), label).toBe(true);
-        expect(sound(repair.rows), label).toBe(true);
-        expect(applyChanges(rows, changes), label).toEqual(repair.rows);
-        expect(changes.length, label).toBeGreaterThanOrEqual(1);
-        expect(changes.length, label).toBeLessThanOrEqual(6);
-        expect(new Set(changes.map((change) => change.cell)).size, label).toBe(changes.length);
-        const moves = changes.filter((change) => change.to === 'S');
-        expect(moves.length, label).toBeLessThanOrEqual(1);
-        // 每一条都真的改了点什么：墙改成地面、地面改成墙、起点挪到另一格地面上
-        for (const change of changes) {
-          if (change.to === '.') expect(flat[change.cell], label).toBe('#');
-          else if (change.to === 'S') expect(flat[change.cell], label).toBe('.');
-          else if (flat[change.cell] === 'S') expect(moves.length, label).toBe(1); // 原来的起点要改成墙，得先把起点挪走
-          else expect(flat[change.cell], label).toBe('.');
-        }
+        expectProperRepair(rows, repair, label);
+        expect(repair.changes.length, label).toBeLessThanOrEqual(6);
+        // 细找只把起点往原来就是地面的格子上挪
+        for (const change of repair.changes) if (change.to === 'S') expect(rows.join('')[change.cell], label).toBe('.');
+        expectNothingSpare(rows, repair, label);
       }
       // 至少一半找到了建议，否则上面等于没查
       expect(found).toBeGreaterThanOrEqual(150);
@@ -223,13 +252,13 @@ describe('suggestRepair', () => {
         const label = rows.join('/');
         const first = firstFixInOne(rows);
         if (first) {
-          const repair = suggestRepair(rows);
+          const repair = closestRepair(rows);
           expect(repair?.changes.length, label).toBe(1);
           expect(repair!.rows, label).toEqual(first);
           expect(applyChanges(rows, repair!.changes), label).toEqual(first);
           enough++;
         } else {
-          expect(suggestRepair(rows, { maxChanges: 1 }), label).toBeNull();
+          expect(closestRepair(rows, { maxChanges: 1 }), label).toBeNull();
         }
       }
       expect(enough).toBeGreaterThanOrEqual(60);
@@ -239,8 +268,8 @@ describe('suggestRepair', () => {
       const stubborn = cases.filter(({ rows }) => !fixableInOne(rows)).slice(0, 12);
       expect(stubborn).toHaveLength(12);
       for (const { rows } of stubborn) {
-        expect(suggestRepair(rows, { maxChanges: 1 }), rows.join('/')).toBeNull();
-        expect(suggestRepair(rows, { maxChanges: 0 }), rows.join('/')).toBeNull();
+        expect(closestRepair(rows, { maxChanges: 1 }), rows.join('/')).toBeNull();
+        expect(closestRepair(rows, { maxChanges: 0 }), rows.join('/')).toBeNull();
       }
     });
   });
@@ -260,11 +289,11 @@ describe('suggestRepair', () => {
         if (fixableInOne(rows)) continue;
         const label = rows.join('/');
         if (fixableInTwo(rows)) {
-          expect(suggestRepair(rows)?.changes.length, label).toBe(2);
+          expect(closestRepair(rows)?.changes.length, label).toBe(2);
           twoEnough++;
         } else {
           // 反过来：穷举说两格不够，那么只许改两格的时候就该说没有
-          expect(suggestRepair(rows, { maxChanges: 2 }), label).toBeNull();
+          expect(closestRepair(rows, { maxChanges: 2 }), label).toBeNull();
         }
       }
     }
@@ -272,8 +301,8 @@ describe('suggestRepair', () => {
   }, 300_000);
 
   it('finds the only two cells that mend a corridor blocked in two places', () => {
-    expect(suggestRepair(TWO_GATES, { maxChanges: 1 })).toBeNull();
-    const repair = suggestRepair(TWO_GATES)!;
+    expect(closestRepair(TWO_GATES, { maxChanges: 1 })).toBeNull();
+    const repair = closestRepair(TWO_GATES)!;
     expect([...repair.changes].sort((a, b) => a.cell - b.cell)).toEqual([
       { cell: 4, to: '.' },
       { cell: 36, to: '.' },
@@ -292,7 +321,7 @@ describe('suggestRepair', () => {
         const bad = withCell(rows, cell, '#');
         if (fine(bad)) continue;
         spoilt++;
-        const repair = suggestRepair(bad);
+        const repair = closestRepair(bad);
         const label = `第 ${i + 1} 关，第 ${cell} 格改成了墙`;
         // 改回去就行，所以建议不会超过一格
         expect(repair?.changes.length, label).toBe(1);
@@ -304,7 +333,7 @@ describe('suggestRepair', () => {
 
   it('never suggests walling up everything but the start', () => {
     // 只有起点和远处一格地面：把那一格改成墙会只剩一格地面，不算修好
-    const repair = suggestRepair(['S####', '#####', '####.', '#####', '#####']);
+    const repair = closestRepair(['S####', '#####', '####.', '#####', '#####']);
     expect(repair).not.toBeNull();
     expect(fine(repair!.rows)).toBe(true);
     expect(repair!.rows.join('').replaceAll('#', '').length).toBeGreaterThanOrEqual(2);
@@ -315,7 +344,7 @@ describe('suggestRepair', () => {
     // 把起点挪到走廊上只算一格，但原来那格成了滚不到的地面，还得把它改成墙——两格，没有更省的改法
     const rows = ['...##', '.####', '#####', '#####', '####S'];
     expect(fixableInOne(rows)).toBe(false);
-    const repair = suggestRepair(rows)!;
+    const repair = closestRepair(rows)!;
     expect(repair.changes).toHaveLength(2);
     expect(repair.changes[0].to).toBe('S');
     expect([0, 1, 2, 5]).toContain(repair.changes[0].cell);
@@ -325,7 +354,7 @@ describe('suggestRepair', () => {
   });
 
   it('opens a second cell for a map whose only floor is the start', () => {
-    const repair = suggestRepair(['S####', '#####', '#####', '#####', '#####']);
+    const repair = closestRepair(['S####', '#####', '#####', '#####', '#####']);
     expect(repair?.changes).toHaveLength(1);
     expect(repair!.changes[0].to).toBe('.');
     expect(fine(repair!.rows)).toBe(true);
@@ -339,10 +368,10 @@ describe('suggestRepair', () => {
       looks++;
       return (clock += 1000);
     };
-    expect(suggestRepair(TWO_GATES, { maxMs: 1, now: racing })).toBeNull();
+    expect(closestRepair(TWO_GATES, { maxMs: 1, now: racing })).toBeNull();
     expect(looks).toBeGreaterThanOrEqual(2);
     // 同一张图、同样只给 1 毫秒，钟不走的话照样找得到——停手确实是因为钟
-    expect(suggestRepair(TWO_GATES, { maxMs: 1, now: () => 0 })?.changes).toHaveLength(2);
+    expect(closestRepair(TWO_GATES, { maxMs: 1, now: () => 0 })?.changes).toHaveLength(2);
   });
 
   it('answers within its time limit for a hand-drawn 15×15 with a few blocks, whether or not it finds anything', () => {
@@ -367,7 +396,7 @@ describe('suggestRepair', () => {
     ];
     expect(fine(rows)).toBe(false);
     const began = Date.now();
-    const repair = suggestRepair(rows);
+    const repair = closestRepair(rows);
     const took = Date.now() - began;
     if (repair) {
       expect(fine(repair.rows)).toBe(true);
@@ -392,7 +421,7 @@ describe('suggestRepair', () => {
     expect(fine(rows)).toBe(false);
     expect(fixableInOne(rows)).toBe(false);
     const began = Date.now();
-    const repair = suggestRepair(rows);
+    const repair = closestRepair(rows);
     const took = Date.now() - began;
     expect(repair).not.toBeNull();
     expect(fine(repair!.rows)).toBe(true);
@@ -401,4 +430,99 @@ describe('suggestRepair', () => {
     expect(repair!.changes.length).toBeLessThanOrEqual(6);
     expect(took).toBeLessThan(30_000);
   }, 120_000);
+});
+
+/** 每个 2×2 里墙都只在角上相碰，起点四面是墙 */
+const CHECKERS = ['S#.#.', '#.#.#', '.#.#.', '#.#.#', '.#.#.'];
+
+describe('suggestRepair: always an answer, however far the map is from sound', () => {
+  it('leaves a map that is already fine alone', () => {
+    for (const i of [0, 7, 22, 40]) expect(suggestRepair(LEVELS[i].rows)).toEqual({ changes: [], rows: [...LEVELS[i].rows] });
+  });
+
+  it('gives the careful answer whenever there is one', () => {
+    const repair = suggestRepair(TWO_GATES);
+    expect(repair.changes).toEqual([
+      { cell: 4, to: '.' },
+      { cell: 36, to: '.' },
+    ]);
+    expect(repair.rows).toEqual(withCell(withCell(TWO_GATES, 4, '.'), 36, '.'));
+
+    const rand = seeded(17);
+    let compared = 0;
+    for (let made = 0; made < 40; ) {
+      const rows = randomMaze(rand, 5 + Math.floor(rand() * 3), 5 + Math.floor(rand() * 3), 0.1 + rand() * 0.3);
+      if (fine(rows)) continue;
+      made++;
+      const careful = closestRepair(rows);
+      if (!careful) continue;
+      expect(suggestRepair(rows), rows.join('/')).toEqual(careful);
+      compared++;
+    }
+    expect(compared).toBeGreaterThanOrEqual(20);
+  });
+
+  describe('on maps far beyond six changes: big blank boards, dense scribbles, walls touching at every corner', () => {
+    const cases: Array<{ name: string; rows: string[]; repair: Repair; took: number }> = [];
+
+    beforeAll(() => {
+      const maps: Array<[string, string[]]> = [
+        ['blank 15×15', blank(15, 15)],
+        ['blank 17×23', blank(17, 23)],
+        ['blank 23×17', blank(23, 17)],
+        ['checkers', CHECKERS],
+      ];
+      const rand = seeded(31);
+      while (maps.length < 12) {
+        const height = 5 + Math.floor(rand() * 13);
+        const width = 5 + Math.floor(rand() * 19);
+        const rows = randomMaze(rand, height, width, rand() * 0.6);
+        if (!fine(rows)) maps.push([`random ${height}×${width} #${maps.length}`, rows]);
+      }
+      for (const [name, rows] of maps) {
+        const began = Date.now();
+        const repair = suggestRepair(rows);
+        cases.push({ name, rows, repair, took: Date.now() - began });
+      }
+    }, 900_000);
+
+    it('answers every one of them with a map that is sound', () => {
+      expect(cases).toHaveLength(12);
+      for (const { name, rows, repair } of cases) {
+        expect(repair, name).not.toBeNull();
+        expectProperRepair(rows, repair, name);
+      }
+    });
+
+    it('had to change more than six cells for most of them', () => {
+      // 不然上面那一条查的还是细找的本事，不是"六格以外也拿得出改法"
+      expect(cases.filter(({ repair }) => repair !== null && repair.changes.length > 6).length).toBeGreaterThanOrEqual(8);
+    });
+
+    it('leaves out every change it could do without', () => {
+      for (const { name, rows, repair } of cases) expectNothingSpare(rows, repair, name);
+    });
+
+    it('takes seconds, not minutes, even on the biggest board', () => {
+      for (const { name, took } of cases) expect(took, name).toBeLessThan(30_000);
+    });
+  });
+
+  it('still answers when its time was up before it began', () => {
+    // 钟每看一次就过去一千秒：细找、快找都来不及，只剩不用搜的保底造法
+    let looks = 0;
+    for (const rows of [TWO_GATES, blank(9, 9), CHECKERS, ['S####', '#####', '#####', '#####', '#####'], ['...##', '.####', '#####', '#####', '####S']]) {
+      let clock = 0;
+      const racing = (): number => {
+        looks++;
+        return (clock += 1_000_000);
+      };
+      const repair = suggestRepair(rows, { maxMs: 1, now: racing });
+      expectProperRepair(rows, repair, rows.join('/'));
+    }
+    expect(looks).toBeGreaterThanOrEqual(10);
+    // 时限是当真的：钟不走的时候 TWO_GATES 只改两格（见上），来不及的时候顾不上找这么省的
+    let clock = 0;
+    expect(suggestRepair(TWO_GATES, { maxMs: 1, now: () => (clock += 1_000_000) }).changes.length).toBeGreaterThan(2);
+  });
 });

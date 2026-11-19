@@ -4,14 +4,14 @@
 import { wantsAdvice, type Verdict } from './check.ts';
 import type { Repair } from '../solve/repair.ts';
 
-/** queued 排着队；solving 正在算最少步数；repairing 结论有了，正在找修改建议；done 都好了；timeout 太复杂算不出来；failed 线程出了错 */
+/** queued 排着队；solving 线程正在查这张图，结论还没来；repairing 结论有了，还在等修改建议；done 都好了；timeout 太复杂算不出最少步数；failed 线程出了错 */
 export type CheckPhase = 'queued' | 'solving' | 'repairing' | 'done' | 'timeout' | 'failed';
 
 export interface CheckState {
   readonly phase: CheckPhase;
   readonly verdict?: Verdict;
-  /** 修改建议：还在找是 undefined，没找到是 null */
-  readonly repair?: Repair | null;
+  /** 修改建议。图不合格就一定会有一条，可能比结论先到；还没到、或者图用不着建议，就没有这一项 */
+  readonly repair?: Repair;
 }
 
 /** 主线程发给后台线程的：算这张图。seq 是这一次的编号，线程回话时带上 */
@@ -20,10 +20,10 @@ export interface ToWorker {
   readonly rows: readonly string[];
 }
 
-/** 后台线程回的。一张图先回结论；需要修改建议的话再回建议；最后回一句"这张图的事办完了" */
+/** 后台线程回的。一张图回一次结论；不合格的图另外回一条修改建议（哪个先算出来哪个先回，见 worker.ts）；最后回一句"这张图的事办完了" */
 export type FromWorker =
   | { readonly seq: number; readonly verdict: Verdict }
-  | { readonly seq: number; readonly repair: Repair | null }
+  | { readonly seq: number; readonly repair: Repair }
   /** 太复杂，在限定的工作量内算不出最少步数 */
   | { readonly seq: number; readonly tooHard: true }
   /** 这张图没算成（比如求解库没加载成），failed 是原因。线程本身还能接着用 */
@@ -38,7 +38,7 @@ export interface WorkerLike {
   onerror: ((event: unknown) => void) | null;
 }
 
-/** 最少步数最多算多久（毫秒）。找修改建议不算在内，那边自己有时限 */
+/** 结论最多等多久（毫秒）。绝大部分是算最少步数的时间；结论到了以后才找的修改建议不算在内，那边自己有时限 */
 export const SOLVE_LIMIT_MS = 180_000;
 
 interface Job {
@@ -128,18 +128,22 @@ export class Checker {
   private receive(message: FromWorker): void {
     const job = this.job;
     if (!job || message.seq !== job.seq) return;
+    const { verdict, repair } = job.state;
     if ('verdict' in message) {
       clearTimeout(job.timer);
-      this.report(job, { phase: wantsAdvice(message.verdict) ? 'repairing' : 'done', verdict: message.verdict });
+      // 建议要是已经先到了，这张图就都好了
+      const waiting = wantsAdvice(message.verdict) && !repair;
+      this.report(job, keeping({ phase: waiting ? 'repairing' : 'done', verdict: message.verdict }, repair));
     } else if ('repair' in message) {
-      this.report(job, { phase: 'done', verdict: job.state.verdict, repair: message.repair });
+      // 结论还没来的话接着等结论
+      this.report(job, verdict ? { phase: 'done', verdict, repair: message.repair } : { phase: 'solving', repair: message.repair });
     } else if ('tooHard' in message) {
       clearTimeout(job.timer);
-      this.report(job, { phase: 'timeout' });
+      this.report(job, keeping({ phase: 'timeout' }, repair));
     } else if ('failed' in message) {
       clearTimeout(job.timer);
       console.error(`[检查] ${message.failed}`);
-      this.report(job, { phase: 'failed' });
+      this.report(job, keeping({ phase: 'failed' }, repair));
     } else {
       // 这张图的事办完了，线程空出来了
       clearTimeout(job.timer);
@@ -157,7 +161,7 @@ export class Checker {
   private giveUp(job: Job): void {
     if (this.job !== job) return;
     this.stop();
-    this.onChange(job.id, { phase: 'timeout' });
+    this.onChange(job.id, keeping({ phase: 'timeout' }, job.state.repair));
     this.next();
   }
 
@@ -165,7 +169,7 @@ export class Checker {
   private broken(): void {
     const job = this.job;
     this.stop();
-    if (job) this.onChange(job.id, { phase: 'failed' });
+    if (job) this.onChange(job.id, keeping({ phase: 'failed' }, job.state.repair));
     this.next();
   }
 
@@ -176,4 +180,9 @@ export class Checker {
     this.worker?.terminate();
     this.worker = null;
   }
+}
+
+/** 已经到手的修改建议要一直带着：最少步数后来算不出来、线程后来坏了，建议照样作数 */
+function keeping(state: CheckState, repair: Repair | undefined): CheckState {
+  return repair ? { ...state, repair } : state;
 }

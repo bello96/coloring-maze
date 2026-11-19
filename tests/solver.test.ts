@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseLevel, type Dir, type Level } from '../src/game/level.ts';
 import { LEVELS } from '../src/game/levels.ts';
 import { isDone, newGame, roll, steps } from '../src/game/rules.ts';
-import { analyze, shortfall, SolverLimitError, stepGraph, unreachedCells, type Engine } from '../src/game/solver.ts';
+import { analyze, shortfall, SolverLimitError, stepGraph, unreachedCells, widestTrap, type Engine } from '../src/game/solver.ts';
 import { carve } from '../tools/gen.ts';
 import { bruteForce } from './helpers/brute.ts';
 import { randomMaze, seeded } from './helpers/random.ts';
@@ -325,5 +325,38 @@ describe('unreachedCells: the floor no roll ever passes over', () => {
     // 两种都得真的碰到过
     expect(some).toBeGreaterThan(100);
     expect(some).toBeLessThan(500);
+  });
+});
+
+describe('widestTrap: where the ball ends up for good', () => {
+  /** 标着的格子，从小到大 */
+  const marked = (cells: Uint8Array): number[] => [...cells].flatMap((on, cell) => (on ? [cell] : []));
+
+  it('is the whole maze, counted from the start, when the ball can always get back to everywhere', () => {
+    const level = parseLevel(LEVELS[0].rows);
+    const trap = widestTrap(level);
+    expect(trap.stop).toBe(level.start);
+    expect(marked(trap.cells)).toEqual(marked(level.floor));
+  });
+
+  it('is the column the ball can only bounce up and down in once it has turned into it', () => {
+    // 手算：从起点往右停在 (1,2)，再往上或往下就只在第 2 列的 (0,2)、(2,2) 两头之间来回，停不回 (1,2) 了。
+    // 这两个停靠点里先找到的是 (0,2)，第 2 格；它们来回滚过的是第 2、6、10 三格
+    const trap = widestTrap(parseLevel(['.#.#', '.S.#', '##.#']));
+    expect(trap.stop).toBe(2);
+    expect(marked(trap.cells)).toEqual([2, 6, 10]);
+  });
+
+  it('picks the one that dyes the most cells when there are several', () => {
+    // 中间一条横道，两头各接着一条竖道的正中：往左进去的那条三格，往右进去的那条五格，进去了就只能上下来回
+    const trap = widestTrap(parseLevel(['######.', '.#####.', '...S...', '.#####.', '######.']));
+    expect(trap.stop).toBe(6);
+    expect(marked(trap.cells)).toEqual([6, 13, 20, 27, 34]);
+  });
+
+  it('is just the start when the ball cannot move', () => {
+    const trap = widestTrap(parseLevel(['S#.', '#..']));
+    expect(trap.stop).toBe(0);
+    expect(marked(trap.cells)).toEqual([0]);
   });
 });

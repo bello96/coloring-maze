@@ -113,22 +113,18 @@ export class FakeEl {
 
   // 排版位置：照着竖屏时样式表排出来的样子给
   get offsetLeft(): number {
-    if (this.id === 'guide') return 12;
     return this.id === 'result' ? (this.browser.width - 340) / 2 : 0;
   }
   get offsetWidth(): number {
-    if (this.id === 'guide') return 236;
     return this.id === 'result' ? 340 : this.browser.width;
   }
   get offsetTop(): number {
     if (this.id === 'tally') return 14;
     if (this.id === 'tools') return this.browser.height - 61;
     if (this.id === 'result') return this.browser.height - 220;
-    if (this.id === 'guide') return this.browser.height - 78 - 124;
     return 0;
   }
   get offsetHeight(): number {
-    if (this.id === 'guide') return 124;
     return this.id === 'tally' ? 72 : 41;
   }
 }
@@ -149,8 +145,8 @@ const canvasContext: unknown = new Proxy<Record<string | symbol, unknown>>(
   },
 );
 
-const INITIALLY_HIDDEN = new Set(['tally', 'tools', 'guide', 'result', 'tree']);
-const CHIPS = new Set(['btn-undo', 'btn-restart', 'btn-levels', 'btn-sound', 'btn-again', 'btn-next', 'btn-result-levels']);
+const INITIALLY_HIDDEN = new Set(['tally', 'tools', 'guide', 'guide-page-2', 'guide-page-3', 'result', 'tree']);
+const CHIPS = new Set(['btn-undo', 'btn-restart', 'btn-levels', 'btn-sound', 'btn-again', 'btn-next', 'btn-result-levels', 'btn-guide-next']);
 const KEY_NAMES = { U: 'ArrowUp', D: 'ArrowDown', L: 'ArrowLeft', R: 'ArrowRight' } as const;
 const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -164,6 +160,9 @@ export class FakeBrowser {
   /** 每一帧里跑了多少个回调 */
   readonly perFrame: number[] = [];
   readonly storage = new Map<string, string>();
+  /** 浏览历史：一项一个地址，at 是现在停在哪一项。打开网站时的地址在 install 之前改 entries[0] */
+  entries: string[] = ['/'];
+  at = 0;
   hidden = false;
   private readonly byId = new Map<string, FakeEl>();
   private readonly windowListeners: Record<string, Listener[]> = {};
@@ -203,7 +202,23 @@ export class FakeBrowser {
     vi.stubGlobal('addEventListener', (type: string, fn: Listener) => void (this.windowListeners[type] ??= []).push(fn));
     vi.stubGlobal('requestAnimationFrame', (cb: (now: number) => void) => this.queued.push(cb));
     vi.stubGlobal('devicePixelRatio', 3);
-    vi.stubGlobal('location', { reload: () => {} });
+    const browser = this;
+    vi.stubGlobal('location', {
+      reload: () => {},
+      get pathname() {
+        return browser.path;
+      },
+    });
+    vi.stubGlobal('history', {
+      pushState: (_state: unknown, _title: string, url: string) => {
+        this.entries.splice(this.at + 1);
+        this.entries.push(url);
+        this.at++;
+      },
+      replaceState: (_state: unknown, _title: string, url: string) => {
+        this.entries[this.at] = url;
+      },
+    });
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => this.storage.get(key) ?? null,
       setItem: (key: string, value: string) => void this.storage.set(key, String(value)),
@@ -211,6 +226,21 @@ export class FakeBrowser {
     Object.defineProperty(globalThis, 'innerWidth', { get: () => this.width, configurable: true });
     Object.defineProperty(globalThis, 'innerHeight', { get: () => this.height, configurable: true });
     vi.spyOn(performance, 'now').mockImplementation(() => this.clock);
+  }
+
+  /** 地址栏里现在的地址 */
+  get path(): string {
+    return this.entries[this.at];
+  }
+
+  /** 按浏览器的后退（steps 是 -1）或前进（1）。没有可去的那一项就什么都不发生，返回 false */
+  async travel(steps: -1 | 1): Promise<boolean> {
+    const to = this.at + steps;
+    if (to < 0 || to >= this.entries.length) return false;
+    this.at = to;
+    for (const fn of this.windowListeners.popstate ?? []) fn({} as never);
+    await flush();
+    return true;
   }
 
   /** 页面上带这个 id 的元素（第一次问到时现造一个） */

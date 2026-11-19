@@ -18,10 +18,11 @@
   --birch: #dcc08f;
   --ink: #2c1a0e;
   --dye: #2646b8;
-  /* 由程序画出来的两种木纹，启动时填进来（见 app.ts） */
+  /* 由程序画出来的木纹，启动时填进来（见 ui/hud.ts 的 setWood） */
   --wood-dark: none;
   --wood-light: none;
   --wood-plank: none;
+  --wood-table: none;
   --font: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
   --pad-top: env(safe-area-inset-top, 0px);
   --pad-bottom: env(safe-area-inset-bottom, 0px);
@@ -201,14 +202,36 @@ body {
   pointer-events: auto;
 }
 
-/* ───── 新手提示牌：左下角的一块木牌，第一次玩（还没通过第 1 关）时才有 ───── */
+/* ───── 新手指引：第一次来的人先看到的分步弹层 ─────
+   盖在第 1 关上面的一块木牌，一步一页：上面是一段会动的小演示，下面一句话；底下一排点和「下一步」。
+   演示里的小托盘、弹珠、染料都是样式表画的，动的只有位置、大小和透明度，不费电。
+   第一步在电脑上演方向键，在触屏上演手指滑动（见这一节末尾）。 */
 
 .guide {
   position: fixed;
-  left: calc(env(safe-area-inset-left, 0px) + 20px);
-  bottom: calc(var(--pad-bottom) + 20px);
+  inset: 0;
+  display: grid;
+  place-items: center;
   box-sizing: border-box;
-  padding: 15px 20px 16px 18px;
+  padding: 16px;
+  overflow: auto;
+  background: rgba(14, 8, 4, 0.5);
+  animation: guide-in 0.3s ease-out both;
+}
+
+@keyframes guide-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.guide-card {
+  /* 演示里一格的边长 */
+  --u: 38px;
+  width: min(360px, 100%);
+  box-sizing: border-box;
+  padding: 16px 22px 20px;
+  text-align: center;
   border-radius: 14px;
   background: var(--walnut) var(--wood-dark) center / 560px;
   box-shadow:
@@ -216,43 +239,194 @@ body {
     inset 0 -1px 0 rgba(0, 0, 0, 0.42),
     0 4px 0 var(--walnut-edge),
     5px 14px 26px rgba(0, 0, 0, 0.6);
-  /* 只是给人看的，手指从它上面滑过去照样算数 */
-  pointer-events: none;
-  animation: guide-in 0.4s 0.6s ease-out both;
+  animation: card-in 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
 }
 
-@keyframes guide-in {
+@keyframes card-in {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(32px);
   }
 }
 
-.guide p {
-  margin: 7px 0 0;
+.guide-count {
+  margin: 0;
   font-size: 14px;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
+  letter-spacing: 0.2em;
+  /* 字距加在每个字的右边，左边补上同样多才居中 */
+  text-indent: 0.2em;
   color: var(--cream-dim);
   text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.7);
 }
 
-.guide-how {
-  display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  margin-bottom: 13px;
-}
-
-.guide .guide-lead {
-  margin: 0 0 5px;
-  font-size: 16px;
+.guide-text {
+  margin: 14px 0 0;
+  font-size: 18px;
   letter-spacing: 0.1em;
-  color: var(--cream);
+  text-indent: 0.1em;
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.75);
 }
 
-/* 四个方向键：上面一个，下面一排三个，和键盘上一样 */
-.guide-keys {
+.by-touch {
+  display: none;
+}
+
+.guide-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+/* 走到第几步：一排刻在木头上的小坑，到了的那一个填着染料 */
+.guide-dots {
+  display: flex;
+  gap: 9px;
+  margin: 0;
+  padding: 0 0 0 2px;
+  list-style: none;
+}
+
+.guide-dots li {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(20, 10, 5, 0.5);
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 226, 184, 0.16);
+}
+
+.guide-dots li.on {
+  background: var(--dye);
+  filter: brightness(1.3) saturate(1.1);
+}
+
+/* 演示占的地方三页一样高，翻页的时候木牌不会一高一矮 */
+.demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: calc(var(--u) * 3.6);
+  margin-top: 12px;
+}
+
+/* 小托盘里铣出来的一条道（lane）、一小块地（yard）：桦木的底，上面依次是染料、格线和墙的影子、弹珠 */
+.lane,
+.yard {
+  position: relative;
+  flex: none;
+  width: calc(var(--u) * 5);
+  height: var(--u);
+  border-radius: 3px;
+  background: var(--birch) var(--wood-light) center / 300px;
+  box-shadow: 0 1px 0 rgba(255, 232, 196, 0.22);
+}
+
+.yard {
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 2);
+}
+
+.lane::after,
+.yard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 calc(var(--u) - 1px), rgba(70, 40, 14, 0.26) calc(var(--u) - 1px) var(--u)),
+    repeating-linear-gradient(0deg, transparent 0 calc(var(--u) - 1px), rgba(70, 40, 14, 0.26) calc(var(--u) - 1px) var(--u));
+  box-shadow:
+    inset 0 3px 4px rgba(26, 12, 4, 0.6),
+    inset 2px 0 3px rgba(26, 12, 4, 0.34),
+    inset -1px -1px 0 rgba(255, 240, 210, 0.3);
+}
+
+.demo .trail {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: var(--dye);
+  opacity: 0.9;
+}
+
+.demo .ball {
+  position: absolute;
+  z-index: 2;
+  left: calc(var(--u) * 0.19);
+  top: calc(var(--u) * 0.19);
+  width: calc(var(--u) * 0.62);
+  height: calc(var(--u) * 0.62);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 34% 30%,
+    #fff 0 7%,
+    rgba(255, 255, 255, 0.7) 17%,
+    rgba(228, 242, 238, 0.32) 54%,
+    rgba(206, 222, 216, 0.36) 82%,
+    rgba(110, 126, 122, 0.72) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+    calc(var(--u) * 0.07) calc(var(--u) * 0.11) calc(var(--u) * 0.12) rgba(24, 10, 2, 0.5);
+}
+
+/* 第一步：怎么让小球动。小球往右滚到头，再往左滚回来 */
+.demo-steer .trail {
+  transform-origin: left center;
+  transform: scaleX(0.2);
+  animation: steer-trail 4.8s linear infinite;
+}
+
+.demo-steer .ball {
+  animation: steer-ball 4.8s linear infinite;
+}
+
+@keyframes steer-ball {
+  0%,
+  14% {
+    transform: translateX(0);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  38%,
+  57% {
+    transform: translateX(calc(var(--u) * 4));
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  81%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes steer-trail {
+  0%,
+  14% {
+    transform: scaleX(0.2);
+    opacity: 0.9;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  38%,
+  92% {
+    transform: scaleX(1);
+    opacity: 0.9;
+  }
+  99% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+  100% {
+    transform: scaleX(0.2);
+    opacity: 0;
+  }
+}
+
+/* 四个方向键：上面一个，下面一排三个，和键盘上一样。演到哪一下，哪个键就按下去 */
+.keys {
   display: grid;
   grid-template-columns: repeat(3, 30px);
   grid-template-rows: repeat(2, 30px);
@@ -285,39 +459,342 @@ body {
   fill: var(--ink);
 }
 
-.guide-swipe {
-  display: none;
-  width: 50px;
-  height: 50px;
-  fill: var(--cream);
-  filter: drop-shadow(-1px -1px 0 rgba(22, 11, 5, 0.7));
+.key-right {
+  animation: press-right 4.8s linear infinite;
 }
 
-.by-touch {
-  display: none;
+.key-left {
+  animation: press-left 4.8s linear infinite;
 }
 
-/* 触屏上没有方向键：图示和第一句话换成"滑动" */
+@keyframes press-right {
+  0%,
+  10%,
+  23%,
+  100% {
+    transform: none;
+    filter: none;
+  }
+  12%,
+  20% {
+    transform: translateY(2px);
+    filter: brightness(1.2) drop-shadow(0 0 5px rgba(255, 236, 200, 0.75));
+  }
+}
+
+@keyframes press-left {
+  0%,
+  53%,
+  66%,
+  100% {
+    transform: none;
+    filter: none;
+  }
+  55%,
+  63% {
+    transform: translateY(2px);
+    filter: brightness(1.2) drop-shadow(0 0 5px rgba(255, 236, 200, 0.75));
+  }
+}
+
+/* 触屏上的那根手指：一个半透明的圆点，按下、划过去、抬起 */
+.finger {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  left: -15px;
+  top: calc(var(--u) * 0.78 - 15px);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(236, 220, 188, 0.46);
+  box-shadow:
+    0 0 0 2px rgba(236, 220, 188, 0.9),
+    0 3px 8px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  animation: swipe 4.8s linear infinite;
+}
+
+@keyframes swipe {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateX(calc(var(--u) * 1.4)) scale(1.35);
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(calc(var(--u) * 1.4)) scale(1);
+    animation-timing-function: ease-out;
+  }
+  22% {
+    opacity: 1;
+    transform: translateX(calc(var(--u) * 3.6)) scale(1);
+  }
+  27%,
+  51% {
+    opacity: 0;
+    transform: translateX(calc(var(--u) * 3.6)) scale(1.35);
+  }
+  55% {
+    opacity: 1;
+    transform: translateX(calc(var(--u) * 3.6)) scale(1);
+    animation-timing-function: ease-out;
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(calc(var(--u) * 1.4)) scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: translateX(calc(var(--u) * 1.4)) scale(1.35);
+  }
+}
+
+/* 第二步：小球一滚就滚到头，撞了墙才停 */
+.demo-roll .lane {
+  width: calc(var(--u) * 6);
+}
+
+.demo-roll .trail {
+  transform-origin: left center;
+  transform: scaleX(calc(1 / 6));
+  animation: roll-trail 3.8s linear infinite;
+}
+
+.demo-roll .ball {
+  animation: roll-ball 3.8s linear infinite;
+}
+
+@keyframes roll-ball {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  4%,
+  18% {
+    opacity: 1;
+    transform: translateX(0);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  52% {
+    transform: translateX(calc(var(--u) * 5));
+    animation-timing-function: ease-out;
+  }
+  56% {
+    transform: translateX(calc(var(--u) * 4.84));
+    animation-timing-function: ease-in;
+  }
+  61%,
+  92% {
+    opacity: 1;
+    transform: translateX(calc(var(--u) * 5));
+  }
+  99%,
+  100% {
+    opacity: 0;
+    transform: translateX(calc(var(--u) * 5));
+  }
+}
+
+@keyframes roll-trail {
+  0%,
+  18% {
+    transform: scaleX(calc(1 / 6));
+    opacity: 0.9;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  52%,
+  92% {
+    transform: scaleX(1);
+    opacity: 0.9;
+  }
+  99% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+  100% {
+    transform: scaleX(calc(1 / 6));
+    opacity: 0;
+  }
+}
+
+/* 第三步：三步把六格都染上，底下亮起三颗星 */
+.demo-fill .trail-top {
+  inset: 0 0 auto 0;
+  height: var(--u);
+  transform-origin: left center;
+  transform: scaleX(calc(1 / 3));
+  animation: fill-top 5.6s linear infinite;
+}
+
+.demo-fill .trail-side {
+  inset: var(--u) 0 auto auto;
+  width: var(--u);
+  height: var(--u);
+  transform-origin: center top;
+  transform: scaleY(0);
+  animation: fill-side 5.6s linear infinite;
+}
+
+.demo-fill .trail-bottom {
+  inset: var(--u) auto auto 0;
+  width: calc(var(--u) * 2);
+  height: var(--u);
+  transform-origin: right center;
+  transform: scaleX(0);
+  animation: fill-bottom 5.6s linear infinite;
+}
+
+.demo-fill .ball {
+  animation: fill-ball 5.6s linear infinite;
+}
+
+@keyframes fill-ball {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  3%,
+  8% {
+    opacity: 1;
+    transform: translate(0, 0);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  24%,
+  30% {
+    transform: translate(calc(var(--u) * 2), 0);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  40%,
+  46% {
+    transform: translate(calc(var(--u) * 2), var(--u));
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  60%,
+  92% {
+    opacity: 1;
+    transform: translate(0, var(--u));
+  }
+  99%,
+  100% {
+    opacity: 0;
+    transform: translate(0, var(--u));
+  }
+}
+
+@keyframes fill-top {
+  0%,
+  8% {
+    transform: scaleX(calc(1 / 3));
+    opacity: 0.9;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  24%,
+  92% {
+    transform: scaleX(1);
+    opacity: 0.9;
+  }
+  99% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+  100% {
+    transform: scaleX(calc(1 / 3));
+    opacity: 0;
+  }
+}
+
+@keyframes fill-side {
+  0%,
+  30% {
+    transform: scaleY(0);
+    opacity: 0.9;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  40%,
+  92% {
+    transform: scaleY(1);
+    opacity: 0.9;
+  }
+  99%,
+  100% {
+    transform: scaleY(1);
+    opacity: 0;
+  }
+}
+
+@keyframes fill-bottom {
+  0%,
+  46% {
+    transform: scaleX(0);
+    opacity: 0.9;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  60%,
+  92% {
+    transform: scaleX(1);
+    opacity: 0.9;
+  }
+  99%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+.demo .stars {
+  gap: 5px;
+}
+
+.demo .stars svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  animation: demo-star 5.6s linear infinite;
+}
+
+.demo .stars svg:nth-child(2) {
+  animation-delay: 0.26s;
+}
+
+.demo .stars svg:nth-child(3) {
+  animation-delay: 0.52s;
+}
+
+/* 后两颗晚一点亮，也就晚一点灭：灭得早一些，赶在这一遍演完之前 */
+@keyframes demo-star {
+  0%,
+  62% {
+    opacity: 0;
+    transform: scale(0.3);
+    animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  }
+  67%,
+  82% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  88%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* 触屏上没有方向键：第一步的演示和那句话换成"滑动" */
 @media (hover: none) and (pointer: coarse) {
-  .guide-keys,
+  .keys,
   .by-keys {
     display: none;
   }
 
-  .guide-swipe {
+  .finger {
     display: block;
   }
 
   .by-touch {
     display: inline;
-  }
-
-  .guide-how {
-    align-items: center;
-  }
-
-  .guide .guide-lead {
-    margin-bottom: 0;
   }
 }
 
@@ -415,7 +892,7 @@ body {
 }
 
 /* ───── 选关树 ─────
-   打开网站先看到的一屏：桌上一块很长的胡桃木板，上面刻着一棵树，一关一个圆木片。
+   关里点「选关」看到的那一屏：桌上一块很长的胡桃木板，上面刻着一棵树，一关一个圆木片。
    整块板子上下滚动（浏览器自带的滚动）；木板多宽、多长，木片放在哪，由程序算好（见 ui/tree.ts）。 */
 
 .tree {
@@ -663,41 +1140,83 @@ body {
   }
 }
 
-/* ───── 窄屏、横屏 ───── */
-
-/* 窗口不够宽时左下角被那排按钮占着，提示牌挪到按钮上面 */
-@media (max-width: 960px) {
-  .guide {
-    left: calc(env(safe-area-inset-left, 0px) + 12px);
-    bottom: calc(var(--pad-bottom) + 78px);
-    padding: 12px 16px 13px 14px;
+/* ───── 电脑上的桌面 ─────
+   电脑屏幕大，托盘和选关的那块木板四周露出一大片桌面。那里是一张被灯照亮的浅色橡木桌：
+   3D 画面里的桌面由 view/stage.ts 换（它用的是同一句判断），这里管页面上的——选关那一屏木板两边露出来的桌面、
+   四角的暗边，还有直接压在桌面上的那几个字（桌面浅了，字就得用深色）。
+   触屏设备上桌面露出来的不多，还是原来那张深色的，这一节不管它。 */
+@media not all and (hover: none) and (pointer: coarse) {
+  :root {
+    --table: #96795a;
   }
 
-  .guide p {
-    margin-top: 6px;
-    font-size: 13px;
+  /* 四角只略暗一点，像灯照在桌子中间 */
+  .vignette {
+    background: radial-gradient(ellipse 80% 80% at 50% 46%, transparent 42%, rgba(40, 22, 8, 0.5) 100%);
   }
 
-  .guide-how {
-    gap: 12px;
-    margin-bottom: 10px;
+  .tally {
+    color: var(--ink);
+    text-shadow: 0 1px 0 rgba(255, 238, 208, 0.42);
   }
 
-  .guide .guide-lead {
+  .tally-par {
+    color: #5b4129;
+  }
+
+  .broken {
+    color: var(--ink);
+  }
+
+  /* 一张桌面图横着是八块木板，一块 300 像素宽，和 3D 画面里的桌面差不多：从关里出来，桌面的木板不会忽然变宽变窄。
+     往右挪半块板，拼缝就不会正好贴着中间那块木板的两条边 */
+  .tree {
+    background: var(--table) var(--wood-table) calc(50% + 150px) top / 2400px auto;
+    scrollbar-color: #6b4a2e transparent;
+  }
+
+  .tree::after {
+    background: radial-gradient(ellipse 90% 80% at 50% 46%, transparent 42%, rgba(40, 22, 8, 0.5) 100%);
+  }
+
+  /* 电脑屏幕大，新手指引的木牌和里面的演示都放大一号 */
+  .guide-card {
+    --u: 46px;
+    width: min(440px, 100%);
+    padding: 22px 30px 26px;
+  }
+
+  .guide-count {
     font-size: 15px;
   }
 
-  .guide-keys {
-    grid-template-columns: repeat(3, 26px);
-    grid-template-rows: repeat(2, 26px);
-    gap: 3px;
+  .guide-text {
+    margin-top: 18px;
+    font-size: 21px;
   }
 
-  .guide-swipe {
-    width: 42px;
-    height: 42px;
+  .guide-foot {
+    margin-top: 24px;
+  }
+
+  .keys {
+    grid-template-columns: repeat(3, 36px);
+    grid-template-rows: repeat(2, 36px);
+    gap: 5px;
+  }
+
+  .key svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .demo .stars svg {
+    width: 28px;
+    height: 28px;
   }
 }
+
+/* ───── 窄屏、横屏 ───── */
 
 @media (max-width: 480px) {
   .chip {
@@ -711,6 +1230,15 @@ body {
 
   .tools {
     gap: 9px;
+  }
+
+  .guide-card {
+    --u: 34px;
+    padding: 14px 18px 18px;
+  }
+
+  .guide-text {
+    font-size: 17px;
   }
 }
 
@@ -748,49 +1276,47 @@ body {
     padding-right: 14px;
   }
 
-  /* 提示牌待在左下角、步数的下面：上下没多少地方，图示和字都小一号，才不会顶到步数 */
+  /* 新手指引：上下没多少地方，演示和留白都收紧一些，整块木牌才放得下 */
   .guide {
-    left: calc(env(safe-area-inset-left, 0px) + 12px);
-    bottom: calc(var(--pad-bottom) + 12px);
-    padding: 9px 13px 10px 12px;
+    padding: 8px 16px;
   }
 
-  .guide-how {
-    align-items: center;
+  .guide-card {
+    --u: 30px;
+    padding: 10px 20px 14px;
+  }
+
+  .demo {
     gap: 10px;
-    margin-bottom: 3px;
+    margin-top: 8px;
   }
 
-  .guide p,
-  .guide .guide-lead {
-    margin: 4px 0 0;
-    font-size: 12px;
-    letter-spacing: 0.04em;
+  .guide-text {
+    margin-top: 8px;
+    font-size: 16px;
   }
 
-  .guide .guide-lead {
-    margin: 0;
+  .guide-foot {
+    margin-top: 12px;
   }
 
-  .guide-keys {
-    grid-template-columns: repeat(3, 20px);
-    grid-template-rows: repeat(2, 20px);
+  .keys {
+    grid-template-columns: repeat(3, 24px);
+    grid-template-rows: repeat(2, 24px);
+    gap: 3px;
   }
 
   .key svg {
-    width: 10px;
-    height: 10px;
-  }
-
-  .guide-swipe {
-    width: 34px;
-    height: 34px;
+    width: 11px;
+    height: 11px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .result,
   .guide,
+  .guide-card,
+  .demo *,
   .tree,
   .knot.open .knot-disc::after,
   .result .stars svg.won {
@@ -799,5 +1325,23 @@ body {
 
   .chip {
     transition: none;
+  }
+
+  /* 新手指引的演示不动了：第二、三步定在演完的样子上（滚到了头、全染上了、星星亮着） */
+  .demo-roll .trail,
+  .demo-fill .trail {
+    transform: none;
+  }
+
+  .demo-roll .ball {
+    transform: translateX(calc(var(--u) * 5));
+  }
+
+  .demo-fill .ball {
+    transform: translate(0, var(--u));
+  }
+
+  .demo .stars svg {
+    opacity: 1;
   }
 }

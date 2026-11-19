@@ -4,7 +4,7 @@ import { applyFraming, frameBox, type FrameRequest } from './framing.ts';
 import { isModestGpu } from './sharpness.ts';
 import { BASE_THICKNESS, OUTER } from './dims.ts';
 import type { TrayAssets } from './tray.ts';
-import { BIRCH, TABLE, WALNUT, WoodMill } from './wood.ts';
+import { BIRCH, DESK, TABLE, WALNUT, WoodMill } from './wood.ts';
 
 /** 画面四边各留出多少像素给界面 */
 export interface Insets {
@@ -33,6 +33,12 @@ const SHADOW_REACH = 9.5;
 /** 平时影子边缘柔化多少（阴影图上的像素数） */
 const SHADOW_SOFTNESS = 5;
 
+/**
+ * 是不是触屏设备（手机、平板）。样式表里分电脑和触屏用的是同一句话，两边得一致：
+ * 电脑上托盘四周露出一大片桌面，用浅色的橡木桌面（DESK）；触屏上还是原来那张深色的（TABLE）。
+ */
+export const TOUCH_QUERY = '(hover: none) and (pointer: coarse)';
+
 /** 舞台：渲染器、相机、灯光、桌面，以及所有托盘共用的木纹素材 */
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
@@ -42,7 +48,7 @@ export class Stage {
   readonly board = new THREE.Group();
   readonly assets: TrayAssets;
   private readonly key: THREE.DirectionalLight;
-  private readonly woods: { readonly dark: HTMLCanvasElement; readonly light: HTMLCanvasElement };
+  private readonly woods: { readonly dark: HTMLCanvasElement; readonly light: HTMLCanvasElement; readonly table: HTMLCanvasElement };
   private width = 0;
   private height = 0;
   private ratio = 0;
@@ -60,10 +66,12 @@ export class Stage {
     this.renderer.shadowMap.autoUpdate = false;
     // 玻璃球后面的景象要先单独画一遍再折射；球很小，这一遍用一半的精度就够，能省下不少
     this.renderer.transmissionResolutionScale = 0.5;
-    this.scene.background = new THREE.Color(0x120c09);
+    // 电脑上是浅色的桌面，触屏上是深色的（见 TOUCH_QUERY）
+    const desk = !window.matchMedia?.(TOUCH_QUERY).matches;
+    this.scene.background = new THREE.Color(desk ? 0x96795a : 0x120c09);
 
     // 手机上切到后台久了，系统会把画面占用的显卡资源收走。回来时与其一样样重建，不如整页重开：
-    // 进度是存着的，重开后回到选关树，刚才那一关还亮在那里，再点进去就是。
+    // 进度是存着的，地址栏里也写着是第几关，重开后还是这一关（从头开始）。
     canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
     canvas.addEventListener('webglcontextrestored', () => location.reload());
 
@@ -103,9 +111,9 @@ export class Stage {
     const mill = new WoodMill(this.renderer);
     const birch = mill.make({ ...BIRCH, size });
     const walnut = mill.make({ ...WALNUT, size });
-    const tableWood = mill.make({ ...TABLE, size });
+    const tableWood = mill.make({ ...(desk ? DESK : TABLE), size });
     mill.dispose();
-    this.woods = { dark: walnut.color, light: birch.color };
+    this.woods = { dark: walnut.color, light: birch.color, table: tableWood.color };
     this.assets = {
       birch: texture(birch.color, true),
       birchRelief: texture(birch.relief, false),
@@ -193,16 +201,16 @@ export class Stage {
 
   /**
    * 把木纹缩小成图片地址给界面当底纹，这样界面上的木头和托盘是同一种木头：
-   * dark、light 给木片按钮、木牌、圆木片；plank 给选关树的那块长木板。
+   * dark、light 给木片按钮、木牌、圆木片；plank 给选关树的那块长木板；table 是桌面，电脑上选关树两边露出来的就是它。
    */
-  woodUrls(): { dark: string; light: string; plank: string } {
+  woodUrls(): { dark: string; light: string; plank: string; table: string } {
     const shrink = (source: HTMLCanvasElement): string => {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 512;
       canvas.getContext('2d')!.drawImage(source, 0, 0, 512, 512);
       return canvas.toDataURL('image/jpeg', 0.82);
     };
-    return { dark: shrink(this.woods.dark), light: shrink(this.woods.light), plank: plank(this.woods.dark) };
+    return { dark: shrink(this.woods.dark), light: shrink(this.woods.light), plank: plank(this.woods.dark), table: tile(this.woods.table) };
   }
 }
 
@@ -221,6 +229,27 @@ function plank(source: HTMLCanvasElement): string {
   ctx.translate(0, size * 2);
   ctx.scale(1, -1);
   ctx.drawImage(source, 0, 0, size, size);
+  return canvas.toDataURL('image/jpeg', 0.8);
+}
+
+/**
+ * 桌面的底纹，铺满整个页面用。和 3D 画面里的桌面一样，一张接一张地左右、上下翻着铺（镜像着接，接缝两边的纹理才连得上）：
+ * 所以这里把木纹和它翻过来的三个样子拼成一张，这一张怎么平铺都没有缝。
+ */
+function tile(source: HTMLCanvasElement): string {
+  const size = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size * 2;
+  const ctx = canvas.getContext('2d')!;
+  for (const [flipX, flipY] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ]) {
+    ctx.setTransform(flipX ? -1 : 1, 0, 0, flipY ? -1 : 1, flipX ? size * 2 : 0, flipY ? size * 2 : 0);
+    ctx.drawImage(source, 0, 0, size, size);
+  }
   return canvas.toDataURL('image/jpeg', 0.8);
 }
 

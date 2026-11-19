@@ -367,6 +367,33 @@ describe('the Worker entry', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toBe(request);
   });
+
+  it.each(['/1', '/12', '/200', '/12/', '/012'])('answers %s, the address of a level, with the page of the game', async (path) => {
+    const { seen, page, env } = site();
+    const request = new Request(`${SITE}${path}`, { headers: { accept: 'text/html', 'if-none-match': '"abc"' } });
+    expect(await worker.fetch(request, env)).toBe(page);
+    // 没有 /12 这么个文件：向静态资源要的是网站的根地址，那里就是游戏那一页。请求头原样带过去
+    expect(seen).toHaveLength(1);
+    expect(seen[0].url).toBe(`${SITE}/`);
+    expect(seen[0].method).toBe('GET');
+    expect(seen[0].headers.get('accept')).toBe('text/html');
+    expect(seen[0].headers.get('if-none-match')).toBe('"abc"');
+  });
+
+  it.each(['/abc', '/0', '/12/3', '/1.5', '/12abc', '/1234567', '/12.html'])('leaves %s, which is no level, for the static files to turn down', async (path) => {
+    const { seen, env } = site();
+    const request = new Request(`${SITE}${path}`);
+    await worker.fetch(request, env);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(request);
+  });
+
+  it('gives the page of the game only to someone reading a level address, not posting to it', async () => {
+    const { seen, env } = site();
+    const request = new Request(`${SITE}/12`, { method: 'POST', body: 'x' });
+    await worker.fetch(request, env);
+    expect(seen[0]).toBe(request);
+  });
 });
 
 describe('the stand-in API of the dev and preview servers', () => {

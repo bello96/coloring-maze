@@ -43,7 +43,7 @@ export class Stage {
     return '';
   }
 
-  woodUrls(): { dark: string; light: string; plank: string } {
-    return { dark: 'data:,', light: 'data:,', plank: 'data:,' };
+  woodUrls(): { dark: string; light: string; plank: string; table: string } {
+    return { dark: 'data:,', light: 'data:,', plank: 'data:,', table: 'data:,' };
   }
 }

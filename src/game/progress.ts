@@ -1,5 +1,6 @@
-// 存在浏览器里的进度（第二版）。
-// 第一版按关卡的序号记成绩；关卡能在配置页里改、能换顺序之后，序号就对不上了，所以改成按关卡的固定编号记，
+// 存在浏览器里的进度。一共两样：按关记的成绩（这个文件的前一半），和"玩到第几关"那一个数（后一半）。
+//
+// 成绩是第二版的存法。第一版按关卡的序号记成绩；关卡能在配置页里改、能换顺序之后，序号就对不上了，所以改成按关卡的固定编号记，
 // 并记下通关时那张图的指纹——图后来被改了，就知道当时的最好步数不能再算数。
 import { BUILTIN, sigOf, type LevelSet } from './levelset.ts';
 
@@ -66,7 +67,7 @@ function readV2(raw: string | null): Progress | null {
 
 /**
  * 把第一版的存档转过来：那时只有内置的 80 关，第 i 个成绩就是内置第 i 关的，指纹按内置的图算。
- * "上次玩到哪一关"不再需要（现在打开先看到树），丢掉。
+ * 那里面的"上次玩到哪一关"不搬：玩到第几关由 reachedFrom 按通过的关算出来。
  */
 function readV1(raw: string | null): Progress | null {
   const data = parse(raw);
@@ -136,22 +137,52 @@ export function mergeProgress(mine: Progress, theirs: Progress, keys: readonly L
   return { done: Object.fromEntries(merged), muted: mine.muted };
 }
 
+// ───── 玩到第几关 ─────
+// 哪些关能玩、打开网站进哪一关，只看一个数："玩到第几关"（从 1 数起）。它前面的关都算通过了，它自己是轮到的那一关，
+// 后面的还没轮到；通过了最后一关，它就比关数多一。这个数单独存一项，就是光秃秃的一个数字，
+// 在浏览器的开发者工具里把它改成 40，再打开就是第 40 关。上面那些按关记的成绩只管选关树上的星星和最好步数，不管解锁。
+
+/** "玩到第几关"存在这里 */
+export const LEVEL_KEY = 'coloring-maze.level';
+
+/** 读"玩到第几关"。没存过、读不懂（不是正整数）都是 0，当作没玩过。手改时多打的空格、引号不计较 */
+export function readReached(raw: string | null): number {
+  const found = /^\s*"?(\d{1,7})"?\s*$/.exec(raw ?? '');
+  return found ? Number(found[1]) : 0;
+}
+
+/**
+ * 还没有这个数的老玩家，按通过的关算一个出来：通过的关里位置最靠后的那一关的下一关
+ * （图后来被改过也算通过）。玩过、但这份关卡表里的关一关都没通过，是第 1 关；一关都没通过过是 0，当作没玩过。
+ * @param keys 现在的关卡表里每一关的编号和指纹
+ */
+export function reachedFrom(p: Progress, keys: readonly LevelKey[]): number {
+  for (let i = keys.length - 1; i >= 0; i--) if (passed(p, keys[i].id)) return i + 2;
+  return Object.keys(p.done).length > 0 ? 1 : 0;
+}
+
+/** 玩到第 reached 关的人通过了第 i 关（从 0 数起）之后玩到第几关：通过的是轮到的那一关就往前走一关，重玩前面的不变 */
+export function advanced(reached: number, i: number): number {
+  return Math.max(reached, i + 2);
+}
+
 /** 树上一关的样子：通过了；轮到了（能玩但还没通过）；没轮到 */
 export type NodeState = 'done' | 'open' | 'locked';
 
 /**
- * 第 i 关（从 0 数起）是哪一种。规则只有一条：这一关通过了，或者排在它前一位的那一关通过了，就能玩；排第一的总能玩。
- * 所以平常是"通过的都能重玩，再加上紧跟着的那一关"；配置页在中间插了一关或者换了顺序之后，
- * 老玩家通过的关照样能玩，原来轮到的那一关照样能玩，新插进来的那一关也能玩——这时轮到的关不止一个。
+ * 一共 count 关、玩到第 reached 关（0 是没玩过，和 1 一样）的时候，第 i 关（从 0 数起）是哪一种：
+ * 排在它前面的都是通过了的，它自己是轮到的，后面的没轮到。
  */
-export function stateOf(p: Progress, keys: readonly LevelKey[], i: number): NodeState {
-  if (i < 0 || i >= keys.length) return 'locked';
-  if (passed(p, keys[i].id)) return 'done';
-  return i === 0 || passed(p, keys[i - 1].id) ? 'open' : 'locked';
+export function stateOf(reached: number, count: number, i: number): NodeState {
+  if (i < 0 || i >= count) return 'locked';
+  const turn = Math.max(reached, 1) - 1;
+  return i < turn ? 'done' : i === turn ? 'open' : 'locked';
 }
 
-/** 位置最靠后的那个"轮到了"的关，也就是玩家打得最远的地方；全部通过了就是最后一关。一关都没有时是 -1 */
-export function topOpen(p: Progress, keys: readonly LevelKey[]): number {
-  for (let i = keys.length - 1; i >= 0; i--) if (stateOf(p, keys, i) === 'open') return i;
-  return keys.length - 1;
+/**
+ * 打开网站、或者想去的关还没轮到的时候，进哪一关（从 0 数起）：轮到的那一关；全通了就是最后一关。一关都没有时是 -1。
+ * 能玩的就是从第 1 关到这一关。
+ */
+export function landing(reached: number, count: number): number {
+  return Math.min(Math.max(reached, 1), count) - 1;
 }

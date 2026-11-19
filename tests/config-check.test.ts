@@ -173,10 +173,12 @@ describe('what the page says about one level', () => {
     ['the level is waiting its turn', { phase: 'queued' }],
     ['it is working on the level', { phase: 'solving' }],
   ])('is busy with the fewest steps while the thread has no answer: %s', (_when, state) => {
-    const report = reportOf({ early: null, par: null, safe: false, state });
+    const report = reportOf({ early: null, par: null, safe: true, state });
     expect(report.lines).toEqual([{ mark: 'pass', text: '形状没问题' }, { mark: 'pass', text: '每一格都滚得到' }, { mark: 'busy', text: '正在算最少步数…' }, UNCHECKED]);
     expect(report.standing).toBe('busy');
     expect(report.advice).toEqual({ kind: 'none' });
+    // 不保证不会走进死局的图也一样在算，只是它另外还等着一条建议（见下面几条）
+    expect(reportOf({ early: null, par: null, safe: false, state }).lines).toEqual(report.lines);
   });
 
   it('stops at the fewest steps when every cell can be reached but no route dyes them all', () => {
@@ -229,14 +231,29 @@ describe('what the page says about one level', () => {
     expect(reportOf({ early: null, par: null, safe: false, state: { phase: 'repairing', verdict: UNSOLVABLE } }).advice).toEqual({ kind: 'searching' });
   });
 
-  it('hands over the suggestion that was found, or says that none was', () => {
+  it('says a suggestion is being looked for before the fewest steps are known, when a dead end cannot be ruled out', () => {
+    // 形状没问题、每一格都滚得到，但已经看得出不保证不会走进死局：能不能通关还在算，建议不必等它
+    for (const phase of ['queued', 'solving'] as const) {
+      expect(reportOf({ early: null, par: null, safe: false, state: { phase } }).advice, phase).toEqual({ kind: 'searching' });
+    }
+  });
+
+  it('hands over the suggestion as soon as there is one', () => {
     const early = precheck(UNREACHED);
     expect(reportOf({ early, par: null, safe: false, state: { phase: 'done', verdict: early!, repair: FIX } }).advice).toEqual({ kind: 'found', repair: FIX });
-    expect(reportOf({ early, par: null, safe: false, state: { phase: 'done', verdict: early!, repair: null } }).advice).toEqual({ kind: 'missing' });
     expect(reportOf({ early: null, par: null, safe: false, state: { phase: 'done', verdict: UNSOLVABLE, repair: FIX } }).advice).toEqual({ kind: 'found', repair: FIX });
-    expect(reportOf({ early: null, par: null, safe: false, state: { phase: 'done', verdict: UNSOLVABLE, repair: null } }).advice).toEqual({ kind: 'missing' });
     expect(reportOf({ early: null, par: 9, safe: false, state: { phase: 'done', verdict: RISKY, repair: FIX } }).advice).toEqual({ kind: 'found', repair: FIX });
-    expect(reportOf({ early: null, par: 9, safe: false, state: { phase: 'done', verdict: RISKY, repair: null } }).advice).toEqual({ kind: 'missing' });
+    // 最少步数还在算的时候建议就到了
+    const solving = reportOf({ early: null, par: null, safe: false, state: { phase: 'solving', repair: FIX } });
+    expect(solving.advice).toEqual({ kind: 'found', repair: FIX });
+    expect(solving.lines[2]).toEqual({ mark: 'busy', text: '正在算最少步数…' });
+  });
+
+  it('keeps the suggestion it has when the fewest steps cannot be worked out after all', () => {
+    const hard = reportOf({ early: null, par: null, safe: false, state: { phase: 'timeout', repair: FIX } });
+    expect(hard.lines[2].text).toBe('这张图太复杂，算不出最少步数，请改小一些或多放几块墙');
+    expect(hard.advice).toEqual({ kind: 'found', repair: FIX });
+    expect(reportOf({ early: null, par: null, safe: false, state: { phase: 'failed', repair: FIX } }).advice).toEqual({ kind: 'found', repair: FIX });
   });
 
   it('has no suggestion to show when none is needed or none can come', () => {

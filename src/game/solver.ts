@@ -785,6 +785,51 @@ function stuckBy(level: Level, stops: number, rolls: readonly Roll[], rollsFrom:
   return (sinks.size - 1) * 6 + missing;
 }
 
+/**
+ * 小球最后会落进去的那些"进得去出不来"的组（见 stuckBy）里，光在组里滚就能染到最多格子的那一个。
+ * 修改建议拿它保底（见 src/solve/repair.ts）：把起点放到 stop 上、把 cells 以外的地面全改成墙，
+ * 小球就只在这个组里转，剩下的每一格它都染得到——得到的图一定能通关、不会困死。
+ * 一样多的时候取先找到的那个组；起点自己就在这样的组里的话，它排在最前面。
+ */
+export function widestTrap(level: Level): {
+  /** 组里的一个停靠点（格子编号）；起点在这个组里的话就是起点 */
+  readonly stop: number;
+  /** 每格一个数：1 是这个组染得到的格子，stop 那一格也算 */
+  readonly cells: Uint8Array;
+} {
+  const { stopCells, rolls, rollsFrom } = stopGraph(level);
+  const group = strongGroups(stopCells.length, rollsFrom);
+  const leaves = new Set<number>();
+  for (const r of rolls) if (group[r.from] !== group[r.to]) leaves.add(group[r.from]);
+
+  let best = { stop: level.start, cells: new Uint8Array(level.rows * level.cols) };
+  let most = 0;
+  const looked = new Set<number>();
+  // 停靠点是按找到的先后编号的，起点是第 0 个：每个组先碰到的那个停靠点就是它的代表
+  for (let s = 0; s < stopCells.length; s++) {
+    const g = group[s];
+    if (leaves.has(g) || looked.has(g)) continue;
+    looked.add(g);
+    const cells = new Uint8Array(level.rows * level.cols);
+    cells[stopCells[s]] = 1;
+    let count = 1;
+    for (const r of rolls) {
+      if (group[r.from] !== g) continue;
+      for (const cell of r.cells) {
+        if (!cells[cell]) {
+          cells[cell] = 1;
+          count++;
+        }
+      }
+    }
+    if (count > most) {
+      most = count;
+      best = { stop: stopCells[s], cells };
+    }
+  }
+  return best;
+}
+
 /** 给每个停靠点标上它所在的组号：同一组里的停靠点互相都到得了（Tarjan 强连通分量） */
 function strongGroups(stops: number, rollsFrom: readonly Roll[][]): Int32Array {
   const index = new Int32Array(stops).fill(-1);

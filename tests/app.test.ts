@@ -14,6 +14,8 @@ vi.mock('../src/view/stage.ts', () => import('./helpers/fake-stage.ts'));
 
 const SAVE = 'coloring-maze.v2';
 const OLD_SAVE = 'coloring-maze.v1';
+/** "玩到第几关"存在这一项里，就是一个数字 */
+const LEVEL = 'coloring-maze.level';
 const K = keysOf(BUILTIN);
 /** 按内置关卡的顺序给出每关的最好步数（0 = 没通过），拼成一份存档 */
 const saveOf = (bests: readonly number[], muted = false): { done: Record<string, { best: number; sig: string }>; muted: boolean } => ({
@@ -67,18 +69,27 @@ interface Inner {
   readonly queue: unknown[];
   readonly pumping: boolean;
   readonly progress: Progress;
+  readonly reached: number;
   readonly sound: { rolling(speed: number): void; impact(strength: number): void };
-  snapshot(): { level: number; id: string; steps: number; phase: string; idle: boolean; settled: boolean; solution: string };
+  snapshot(): { level: number; id: string; steps: number; phase: string; guide: boolean; idle: boolean; settled: boolean; solution: string };
 }
 
 interface BootOptions {
-  /** 存档：按内置关卡的顺序，每关的最好步数（0 = 没通过） */
+  /** 按关记的成绩：按内置关卡的顺序，每关的最好步数（0 = 没通过） */
   readonly bests?: readonly number[];
+  /** 存着的"玩到第几关"。不给的话：有 bests 的是只有老存档的人（数字由它算出来），没有 bests 的是第一次来的人 */
+  readonly reached?: number;
   readonly screen?: { readonly width: number; readonly height: number };
   /** 用哪份关卡表，不给就是内置的 80 关 */
   readonly set?: LevelSet;
-  /** 进第几关（从 1 数起）。不给就进轮到的那一关（玩家打得最远的地方）；null 是停在树上不进关 */
+  /** 打开网站时地址栏里的地址，不给就是 / */
+  readonly path?: string;
+  /** 进第几关（从 1 数起）。不给就留在打开网站时进的那一关；null 是去选关树上待着 */
   readonly enter?: number | null;
+  /** 第一次来的人先看到新手指引。默认替他一路点完；'stay' 是留着不点 */
+  readonly guide?: 'stay';
+  /** false：start 之后一帧也不等，托盘还没滑进来就交出去 */
+  readonly settle?: false;
   /** 启动之前对假浏览器再做点手脚（比如放一份旧存档、让存储坏掉） */
   readonly before?: (browser: FakeBrowser) => void;
 }
@@ -86,19 +97,26 @@ interface BootOptions {
 async function boot(options: BootOptions = {}): Promise<{ browser: FakeBrowser; app: Inner }> {
   const browser = new FakeBrowser();
   if (options.screen) Object.assign(browser, options.screen);
+  if (options.path) browser.entries[0] = options.path;
   browser.install();
   if (options.bests) browser.storage.set(SAVE, JSON.stringify(saveOf(options.bests)));
+  if (options.reached !== undefined) browser.storage.set(LEVEL, String(options.reached));
   options.before?.(browser);
   const { App } = await import('../src/app.ts');
-  const app = new App(browser.el('stage') as never, 'serif');
-  app.start(options.set ?? BUILTIN);
-  await browser.seconds(1);
-  if (options.enter !== null) {
-    const kinds = browser.knots().map(kind);
-    const turn = kinds.lastIndexOf('open');
-    await enter(browser, options.enter ?? (turn >= 0 ? turn + 1 : kinds.length));
-  }
-  return { browser, app: app as unknown as Inner };
+  const made = new App(browser.el('stage') as never, 'serif');
+  const app = made as unknown as Inner;
+  made.start(options.set ?? BUILTIN);
+  if (options.guide !== 'stay') await skipGuide(browser);
+  if (options.settle === false) return { browser, app };
+  await browser.seconds(3);
+  if (options.enter === null) await browser.click('btn-levels');
+  else if (options.enter !== undefined && options.enter !== app.index + 1) await enter(browser, options.enter);
+  return { browser, app };
+}
+
+/** 新手指引亮着的话，一路点到它收起来 */
+async function skipGuide(browser: FakeBrowser): Promise<void> {
+  for (let i = 0; i < 6 && !browser.el('guide').hidden; i++) await browser.click('btn-guide-next');
 }
 
 /** 树上第 n 关（从 1 数起）的木片 */
@@ -296,11 +314,14 @@ describe('a level set other than the built-in one', () => {
     expect(browser.el('btn-next').hidden).toBe(true);
   });
 
-  it('opens its first level to someone whose save has never seen that level', async () => {
+  it('lets someone whose older save has its last level play the levels before it too, though one of them is new', async () => {
+    // 老存档里通过了 b01，它在这份关卡表里排第 2（也是最后一关）：算下来是全通了，打开停在最后一关，前面那关也能玩
     const { app, browser } = await boot({ set: custom, bests: [3, 5, 6, 7] });
-    expect(app.snapshot()).toMatchObject({ level: 1, id: 'x1' });
+    expect(app.snapshot()).toMatchObject({ level: 2, id: 'b01' });
     await browser.click('btn-levels');
     expect(browser.knots().map((el) => !el.disabled)).toEqual([true, true]);
+    await enter(browser, 1);
+    expect(app.snapshot()).toMatchObject({ level: 1, id: 'x1', phase: 'playing' });
   });
 });
 
@@ -360,18 +381,16 @@ describe('moving between levels', () => {
   });
 });
 
-describe('the tree of levels', () => {
-  it('is what the game opens on: no level, no tray, nothing drawn', async () => {
-    const { app, browser } = await boot({ enter: null });
-    expect(app.snapshot()).toMatchObject({ level: 0, id: '', phase: 'tree' });
+describe('the tree of levels, behind the "levels" button', () => {
+  it('is not what the game opens on: it comes up when "levels" is pressed', async () => {
+    const { app, browser } = await boot();
+    expect(browser.el('tree').hidden).toBe(true);
+    expect(app.snapshot().phase).toBe('playing');
+    await browser.click('btn-levels');
+    expect(app.snapshot()).toMatchObject({ level: 1, id: 'b01', phase: 'tree' });
     expect(browser.el('tree').hidden).toBe(false);
     expect(browser.el('tally').hidden).toBe(true);
     expect(browser.el('tools').hidden).toBe(true);
-    expect(browser.el('guide').hidden).toBe(true);
-    expect(app.view.stage.board.children).toHaveLength(0);
-    await browser.seconds(3);
-    expect(app.view.stage.renders).toBe(0);
-    expect(browser.queued).toHaveLength(0);
   });
 
   it('has a disc for every level, and a new player can press only the first', async () => {
@@ -443,17 +462,6 @@ describe('the tree of levels', () => {
     expect(marbleOffCentre(app)).toBeLessThan(1e-9);
   });
 
-  it('has the first tray slide in from the side rather than just be there', async () => {
-    const { app, browser } = await boot({ enter: null });
-    await browser.click(knot(browser, 1));
-    await browser.frame();
-    await browser.frame();
-    expect(app.view.board.tray.group.position.x).toBeGreaterThan(20);
-    await browser.seconds(3);
-    expect(app.view.board.tray.group.position.x).toBe(0);
-    expect(app.view.leaving).toBeNull();
-  });
-
   it('does not let a level be entered whose turn has not come, however it is pressed', async () => {
     const { app, browser } = await boot({ enter: null });
     const locked = knot(browser, 6);
@@ -461,9 +469,9 @@ describe('the tree of levels', () => {
     // 就算绕过了按钮的禁用（比如用脚本直接触发点击），也进不去
     for (const fn of locked.listeners.click ?? []) fn({ target: locked } as never);
     await browser.seconds(1);
-    expect(app.snapshot().phase).toBe('tree');
+    expect(app.snapshot()).toMatchObject({ level: 1, phase: 'tree' });
     expect(browser.el('tree').hidden).toBe(false);
-    expect(app.view.stage.board.children).toHaveLength(0);
+    expect(browser.path).toBe('/1');
   });
 
   it('comes back from a level when "levels" is pressed, dropping the game that was going on', async () => {
@@ -515,17 +523,19 @@ describe('the tree of levels', () => {
     expect(browser.el('guide').hidden).toBe(true);
   });
 
-  it('has two levels in turn after a level was put into the middle of the set', async () => {
-    // 通过了 b01、b02 的人；b01 后面插进一关 x1
+  it('keeps the place of someone with an older save when a level was put into the middle of the set', async () => {
+    // 老存档里通过了 b01、b02 的人；b01 后面插进一关 x1。他通过的关里最靠后的 b02 现在排第 3，所以玩到第 4 关
     const set: LevelSet = { version: 1, levels: [BUILTIN.levels[0], { ...BUILTIN.levels[3], id: 'x1' }, BUILTIN.levels[1], BUILTIN.levels[2]] };
-    const { app, browser } = await boot({ set, bests: [3, 5], enter: null });
-    expect(browser.knots().map(kind)).toEqual(['done', 'open', 'done', 'open']);
-    // 打开时停在位置最靠后的那个
+    const { app, browser } = await boot({ set, bests: [3, 5] });
+    expect(app.snapshot()).toMatchObject({ level: 4, id: 'b03', phase: 'playing' });
+    await browser.click('btn-levels');
+    expect(browser.knots().map(kind)).toEqual(['done', 'done', 'done', 'open']);
     expect(browser.el('tree').scrollTop).toBe(scrolledTo(4, 4));
+    // 新插进来的那一关他没玩过：没有星星，但进得去
+    expect(noteOf(knot(browser, 1))).toEqual({ stars: 3, text: '3 步' });
+    expect(noteOf(knot(browser, 2))).toBeNull();
     await enter(browser, 2);
     expect(app.snapshot()).toMatchObject({ level: 2, id: 'x1', phase: 'playing' });
-    await enter(browser, 4);
-    expect(app.snapshot()).toMatchObject({ level: 4, id: 'b03', phase: 'playing' });
   });
 
   it.each<readonly [string, LevelSet]>([
@@ -547,6 +557,9 @@ describe('the tree of levels', () => {
 
   it('lays the tree out again when the window changes size, and leaves the 3D picture alone', async () => {
     const { app, browser } = await boot({ enter: null });
+    // 树盖着的时候，底下那一关的画面等动画演完就不再动了
+    await browser.seconds(9);
+    const { resizes, renders } = { resizes: app.view.stage.resizes.length, renders: app.view.stage.renders };
     const board = browser.el('tree-board');
     expect(board.style.width).toBe('390px');
     browser.resize(1280, 720);
@@ -554,8 +567,9 @@ describe('the tree of levels', () => {
     expect(browser.knots()).toHaveLength(80);
     expect(browser.el('tree').scrollTop).toBe(scrolledTo(1, 80, 560, 720));
     await browser.seconds(1);
-    expect(app.view.stage.resizes).toHaveLength(0);
-    expect(app.view.stage.renders).toBe(0);
+    expect(app.view.stage.resizes).toHaveLength(resizes);
+    expect(app.view.stage.renders).toBe(renders);
+    expect(browser.queued).toHaveLength(0);
   });
 
   it('stays where the player scrolled to when only the height of the window changes', async () => {
@@ -574,26 +588,6 @@ describe('the tree of levels', () => {
     browser.resize(1280, 720);
     await enter(browser, 1);
     expect(app.view.stage.resizes.at(-1)).toMatchObject({ width: 1280, height: 720 });
-  });
-});
-
-describe('a first level that is a big rectangle', () => {
-  // 排第一的不一定是 5×5 的小方图：配置页可以把任何一关排到第一位。提示牌只在排第一的那一关里有
-  const set: LevelSet = { version: 1, levels: [{ ...BUILTIN.levels[50], id: 'big' }, BUILTIN.levels[0]] };
-
-  it('gets the guide, and the tall tray moves up so that the guide does not lie on it', async () => {
-    const { app, browser } = await boot({ set });
-    expect(app.snapshot()).toMatchObject({ level: 1, id: 'big', phase: 'playing' });
-    expect([app.level.rows, app.level.cols]).toEqual([19, 15]);
-    expect(browser.el('guide').hidden).toBe(false);
-    // 竖屏 390×844：留给托盘的地方宽 370、高 677，竖着的托盘（高是宽的 1.2 倍）会伸到提示牌上沿（630）下面，所以让到它上面
-    expect(app.view.stage.resizes.at(-1)!.safe).toEqual({ left: 10, right: 10, top: 94, bottom: 844 - 630 });
-  });
-
-  it('gives the room back once the guide is gone', async () => {
-    const { app, browser } = await boot({ set, enter: 1, before: (b) => b.storage.set(SAVE, JSON.stringify({ done: { big: { best: 99, sig: 'x' } }, muted: false })) });
-    expect(browser.el('guide').hidden).toBe(true);
-    expect(app.view.stage.resizes.at(-1)!.safe).toEqual({ left: 10, right: 10, top: 94, bottom: 73 });
   });
 });
 
@@ -824,49 +818,356 @@ describe('the picture', () => {
   });
 });
 
-describe('the guide for first-time players', () => {
-  it('is on the screen until the first level has been finished, and never comes back', async () => {
-    const { app, browser } = await boot();
-    expect(browser.el('guide').hidden).toBe(false);
-    await play(browser, 'UL');
-    expect(browser.el('guide').hidden).toBe(false);
-    await browser.key('D');
-    await browser.seconds(2);
-    expect(app.snapshot().phase).toBe('done');
-    expect(browser.el('guide').hidden).toBe(true);
-    // 再玩一次第 1 关，或者去别的关再回来，都不再出现
-    await browser.click('btn-again');
-    await browser.seconds(2);
-    expect(browser.el('guide').hidden).toBe(true);
-    await enter(browser, 2);
-    await enter(browser, 1);
-    expect(app.snapshot()).toMatchObject({ level: 1, phase: 'playing' });
-    expect(browser.el('guide').hidden).toBe(true);
+describe('the address of the page', () => {
+  it('opens the level in turn when the site is opened at its root, and writes that level into the address', async () => {
+    const { app, browser } = await boot({ reached: 12 });
+    expect(app.snapshot()).toMatchObject({ level: 12, id: 'b12', steps: 0, phase: 'playing', guide: false });
+    expect(browser.el('tree').hidden).toBe(true);
+    expect(browser.el('tally').hidden).toBe(false);
+    expect(stainMatchesRules(app)).toBe(true);
+    // 是把原来的地址换掉，不是往历史里添一项：这时按后退是离开网站，而不是回到 /
+    expect(browser.entries).toEqual(['/12']);
   });
 
-  it('never shows to someone who finished the first level on an earlier visit', async () => {
-    const { browser } = await boot({ bests: [3], enter: 1 });
-    expect(browser.el('guide').hidden).toBe(true);
-  });
-
-  it('leaves the tray where it is on a tall screen, where there is room for both', async () => {
-    const { app } = await boot();
-    // 竖屏 390×844：按钮那一排上沿在 783，托盘的下沿到不了提示牌那里
-    expect(app.view.stage.resizes.at(-1)!.safe).toEqual({ left: 10, right: 10, top: 94, bottom: 73 });
-  });
-
-  it('makes the tray move up out of its way on a short screen, and gives the room back afterwards', async () => {
-    const { app, browser } = await boot({ screen: { width: 375, height: 667 } });
-    const stage = app.view.stage;
-    // 提示牌的上沿在 667 − 78 − 124 = 465，再留 12 的空
-    expect(stage.resizes.at(-1)!.safe.bottom).toBe(667 - 453);
-    await play(browser, 'ULD');
+  it('has the first tray slide in from the side rather than just be there', async () => {
+    const { app, browser } = await boot({ reached: 1, settle: false });
+    expect(app.snapshot().phase).toBe('entering');
+    await browser.frame();
+    await browser.frame();
+    expect(app.view.board.tray.group.position.x).toBeGreaterThan(20);
     await browser.seconds(3);
-    // 通关面板出来、提示牌收起：让的是通关面板
-    expect(stage.resizes.at(-1)!.safe.bottom).toBe(220 + 12);
+    expect(app.view.board.tray.group.position.x).toBe(0);
+    expect(app.view.leaving).toBeNull();
+    expect(app.snapshot().phase).toBe('playing');
+  });
+
+  it('opens the level in the address when the player has got that far', async () => {
+    const earlier = await boot({ reached: 12, path: '/5' });
+    expect(earlier.app.snapshot()).toMatchObject({ level: 5, id: 'b05', phase: 'playing' });
+    expect(earlier.browser.entries).toEqual(['/5']);
+    const inTurn = await boot({ reached: 12, path: '/12' });
+    expect(inTurn.app.snapshot()).toMatchObject({ level: 12, phase: 'playing' });
+    expect(inTurn.browser.entries).toEqual(['/12']);
+  });
+
+  it.each(['/13', '/80', '/200'])('goes to the level in turn instead when the address is %s, which the player has not reached', async (path) => {
+    const { app, browser } = await boot({ reached: 12, path });
+    expect(app.snapshot()).toMatchObject({ level: 12, id: 'b12', phase: 'playing' });
+    expect(browser.entries).toEqual(['/12']);
+  });
+
+  it.each(['/abc', '/0', '/12/3', '/index.html'])('goes to the level in turn when the address is %s, which is no level', async (path) => {
+    const { app, browser } = await boot({ reached: 12, path });
+    expect(app.snapshot()).toMatchObject({ level: 12, phase: 'playing' });
+    expect(browser.entries).toEqual(['/12']);
+  });
+
+  it('writes an address that means a level the usual way', async () => {
+    const { app, browser } = await boot({ reached: 12, path: '/05/' });
+    expect(app.snapshot()).toMatchObject({ level: 5, phase: 'playing' });
+    expect(browser.entries).toEqual(['/5']);
+  });
+
+  it('opens on the last level for someone who has passed them all', async () => {
+    const { app, browser } = await boot({ reached: 81 });
+    expect(app.snapshot()).toMatchObject({ level: 80, id: 'b80', phase: 'playing' });
+    expect(browser.entries).toEqual(['/80']);
+  });
+
+  it('follows the player on to the next level, as a new entry in the history', async () => {
+    const { app, browser } = await boot({ reached: 1 });
+    await play(browser, 'ULD');
+    await browser.seconds(2);
+    // 通关面板亮着的时候还在这一关
+    expect(browser.entries).toEqual(['/1']);
     await browser.click('btn-next');
     await browser.seconds(3);
-    expect(stage.resizes.at(-1)!.safe.bottom).toBe(61 + 12);
+    expect(app.snapshot()).toMatchObject({ level: 2, phase: 'playing' });
+    expect(browser.entries).toEqual(['/1', '/2']);
+    expect(browser.path).toBe('/2');
+  });
+
+  it('keeps the address of the level the player came from while the tree is showing, and changes it when another level is picked', async () => {
+    const { browser } = await boot({ reached: 6, path: '/4' });
+    await browser.click('btn-levels');
+    expect(browser.entries).toEqual(['/4']);
+    await enter(browser, 2);
+    expect(browser.entries).toEqual(['/4', '/2']);
+    // 回到树上又进了同一关：地址没变，历史里不多一项
+    await enter(browser, 2);
+    expect(browser.entries).toEqual(['/4', '/2']);
+    // "再来一次"也不动地址
+    await play(browser, LEVELS[1].solution);
+    await browser.seconds(2);
+    await browser.click('btn-again');
+    await browser.seconds(3);
+    expect(browser.entries).toEqual(['/4', '/2']);
+  });
+
+  it('goes back and forth with the buttons of the browser', async () => {
+    const { app, browser } = await boot({ reached: 6, path: '/4' });
+    await enter(browser, 2);
+    expect(await browser.travel(-1)).toBe(true);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 4, id: 'b04', steps: 0, phase: 'playing', idle: true });
+    expect(browser.entries).toEqual(['/4', '/2']);
+    expect(browser.path).toBe('/4');
+    expect(app.view.stage.board.children).toHaveLength(1);
+    expect(app.view.board.tray.level).toBe(app.level);
+    await browser.travel(1);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 2, steps: 0, phase: 'playing' });
+    // 回来的这一关照常能玩到底
+    await play(browser, LEVELS[1].solution);
+    await browser.seconds(2);
+    expect(app.snapshot().phase).toBe('done');
+  });
+
+  it('goes back from the tree into the level before', async () => {
+    const { app, browser } = await boot({ reached: 6, path: '/4' });
+    await enter(browser, 2);
+    await browser.click('btn-levels');
+    expect(app.snapshot().phase).toBe('tree');
+    await browser.travel(-1);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 4, phase: 'playing' });
+    expect(browser.el('tree').hidden).toBe(true);
+    expect(browser.el('tools').hidden).toBe(false);
+  });
+
+  it('goes back from the result of a level, and the result goes away', async () => {
+    const { app, browser } = await boot({ reached: 6, path: '/4' });
+    await enter(browser, 1);
+    await play(browser, 'ULD');
+    await browser.seconds(2);
+    expect(browser.el('result').hidden).toBe(false);
+    await browser.travel(-1);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 4, steps: 0, phase: 'playing' });
+    expect(browser.el('result').hidden).toBe(true);
+    expect(browser.el('tools').hidden).toBe(false);
+  });
+
+  it('changes level under a marble that is still rolling when the back button is pressed', async () => {
+    const { app, browser } = await boot({ reached: 6, path: '/4' });
+    await enter(browser, 2);
+    await browser.key('U');
+    await browser.frame();
+    await browser.travel(-1);
+    await browser.seconds(4);
+    expect(app.snapshot()).toMatchObject({ level: 4, steps: 0, phase: 'playing', idle: true });
+    expect(stainMatchesRules(app)).toBe(true);
+    expect(app.view.ball).toBeNull();
+    expect(app.view.stage.board.children).toHaveLength(1);
+    await play(browser, LEVELS[3].solution);
+    await browser.seconds(2);
+    expect(app.snapshot().phase).toBe('done');
+  });
+
+  it('lets the tray that is sliding in arrive first when the back button is pressed in the middle of it', async () => {
+    const { app, browser } = await boot({ reached: 6, path: '/4' });
+    await browser.click('btn-levels');
+    await browser.click(knot(browser, 2));
+    await browser.seconds(0.3);
+    expect(browser.entries).toEqual(['/4', '/2']);
+    await browser.travel(-1);
+    // 两次换托盘不能叠在一起：第 2 关的托盘先摆好
+    expect(app.snapshot()).toMatchObject({ level: 2, phase: 'entering' });
+    await browser.seconds(6);
+    expect(app.snapshot()).toMatchObject({ level: 4, steps: 0, phase: 'playing', idle: true });
+    expect(app.view.leaving).toBeNull();
+    expect(app.view.stage.board.children).toHaveLength(1);
+    expect(browser.path).toBe('/4');
+  });
+
+  it('lets a number changed by hand decide where the game opens and what can be played', async () => {
+    // 老存档里只通过了前两关的人，把那个数字改成了 40
+    const { app, browser } = await boot({ bests: [3, 5], reached: 40 });
+    expect(app.snapshot()).toMatchObject({ level: 40, id: 'b40', phase: 'playing' });
+    expect(browser.path).toBe('/40');
+    await browser.click('btn-levels');
+    const kinds = browser.knots().map(kind);
+    expect(kinds.slice(0, 39).every((one) => one === 'done')).toBe(true);
+    expect(kinds.slice(39, 42)).toEqual(['open', 'locked', 'locked']);
+    // 真玩过的关星星还在，跳过去的那些没有
+    expect(noteOf(knot(browser, 1))).toEqual({ stars: 3, text: '3 步' });
+    expect(noteOf(knot(browser, 39))).toBeNull();
+    await enter(browser, 39);
+    expect(app.snapshot()).toMatchObject({ level: 39, id: 'b39', phase: 'playing' });
+  });
+
+  it('writes the number down for a player who only has an older save', async () => {
+    const { browser } = await boot({ bests: [3, 5] });
+    expect(browser.storage.get(LEVEL)).toBe('3');
+  });
+
+  it('moves the number on when the level in turn is passed, and leaves it alone when an earlier level is played again', async () => {
+    const { browser } = await boot({ reached: 2 });
+    await play(browser, LEVELS[1].solution);
+    await browser.seconds(2);
+    expect(browser.storage.get(LEVEL)).toBe('3');
+    await enter(browser, 1);
+    await play(browser, 'ULD');
+    await browser.seconds(2);
+    expect(browser.storage.get(LEVEL)).toBe('3');
+  });
+
+  it('goes by the number as it is stored now, not as it was when the page was opened', async () => {
+    const { app, browser } = await boot({ reached: 2 });
+    // 另一个标签页里已经玩到了第 9 关（或者是手改的）
+    browser.storage.set(LEVEL, '9');
+    await browser.click('btn-levels');
+    expect(browser.knots().slice(7, 10).map(kind)).toEqual(['done', 'open', 'locked']);
+    await enter(browser, 9);
+    expect(app.snapshot()).toMatchObject({ level: 9, phase: 'playing' });
+    // 这边再通过前面的关，不会把那个数改小
+    await enter(browser, 1);
+    await play(browser, 'ULD');
+    await browser.seconds(2);
+    expect(browser.storage.get(LEVEL)).toBe('9');
+  });
+
+  it('does not put the number back when a level is passed here after another tab has gone further', async () => {
+    const { browser } = await boot({ reached: 2, path: '/1' });
+    // 这一页一直停在第 1 关里没动；另一个标签页这期间玩到了第 9 关
+    browser.storage.set(LEVEL, '9');
+    await play(browser, 'ULD');
+    await browser.seconds(2);
+    expect(browser.storage.get(LEVEL)).toBe('9');
+    // 接着就能进第 9 关
+    await enter(browser, 9);
+    expect(browser.path).toBe('/9');
+  });
+
+  it('shows no result beside a level whose turn has not come, even one played before the number was turned back by hand', async () => {
+    // 按关记的成绩里通过了前三关，那个数字却被改回了 2
+    const { app, browser } = await boot({ bests: [3, 5, 6], reached: 2 });
+    expect(app.snapshot()).toMatchObject({ level: 2, id: 'b02' });
+    await browser.click('btn-levels');
+    expect(browser.knots().slice(0, 4).map(kind)).toEqual(['done', 'open', 'locked', 'locked']);
+    expect(noteOf(knot(browser, 1))).toEqual({ stars: 3, text: '3 步' });
+    expect(noteOf(knot(browser, 2))).toEqual({ stars: 3, text: '5 步' });
+    expect(noteOf(knot(browser, 3))).toBeNull();
+    expect(knot(browser, 3).disabled).toBe(true);
+  });
+
+  it('still counts a win for someone whose browser refuses to store anything, for as long as the page stays open', async () => {
+    const refuse = (): never => {
+      throw new Error('storage is off');
+    };
+    const { app, browser } = await boot({ before: () => vi.stubGlobal('localStorage', { getItem: refuse, setItem: refuse }) });
+    await play(browser, 'ULD');
+    await browser.seconds(2);
+    await browser.click('btn-next');
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 2, phase: 'playing' });
+    await browser.click('btn-levels');
+    expect(browser.knots().slice(0, 3).map(kind)).toEqual(['done', 'open', 'locked']);
+  });
+});
+
+describe('the guide for first-time players', () => {
+  /** 指引的三页各自亮没亮着 */
+  const pages = (browser: FakeBrowser): boolean[] => [1, 2, 3].map((n) => !browser.el(`guide-page-${n}`).hidden);
+  /** 指引底下那排点，哪一个是亮的 */
+  const dots = (browser: FakeBrowser): string[] => [1, 2, 3].map((n) => browser.el(`guide-dot-${n}`).className);
+
+  it('comes up over the first level for someone who has never played', async () => {
+    const { app, browser } = await boot({ guide: 'stay' });
+    expect(browser.el('guide').hidden).toBe(false);
+    // 第 1 关已经摆在它后面了
+    expect(app.snapshot()).toMatchObject({ level: 1, id: 'b01', steps: 0, phase: 'playing', guide: true });
+    expect(browser.entries).toEqual(['/1']);
+    expect(browser.el('guide-count').textContent).toBe('第 1 步');
+    expect(pages(browser)).toEqual([true, false, false]);
+    expect(dots(browser)).toEqual(['on', '', '']);
+    expect(browser.el('btn-guide-next').textContent).toBe('下一步');
+    // 键盘的焦点在那个按钮上：按回车就是下一步
+    expect(browser.document.activeElement).toBe(browser.el('btn-guide-next'));
+  });
+
+  it('takes a newcomer to the first level whatever address they arrive by', async () => {
+    const { app, browser } = await boot({ guide: 'stay', path: '/30' });
+    expect(app.snapshot()).toMatchObject({ level: 1, guide: true });
+    expect(browser.entries).toEqual(['/1']);
+  });
+
+  it('comes up over the first level of the set, whichever level that is', async () => {
+    const set: LevelSet = { version: 1, levels: [{ ...BUILTIN.levels[50], id: 'big' }, BUILTIN.levels[0]] };
+    const { app, browser } = await boot({ set, guide: 'stay' });
+    expect(app.snapshot()).toMatchObject({ level: 1, id: 'big', guide: true });
+    expect(browser.el('guide').hidden).toBe(false);
+  });
+
+  it('goes through its three steps one press at a time and then gets out of the way', async () => {
+    const { app, browser } = await boot({ guide: 'stay' });
+    await browser.click('btn-guide-next');
+    expect(browser.el('guide-count').textContent).toBe('第 2 步');
+    expect(pages(browser)).toEqual([false, true, false]);
+    expect(dots(browser)).toEqual(['', 'on', '']);
+    expect(browser.el('btn-guide-next').textContent).toBe('下一步');
+    await browser.click('btn-guide-next');
+    expect(browser.el('guide-count').textContent).toBe('第 3 步');
+    expect(pages(browser)).toEqual([false, false, true]);
+    expect(dots(browser)).toEqual(['', '', 'on']);
+    expect(browser.el('btn-guide-next').textContent).toBe('开始');
+    expect(browser.el('guide').hidden).toBe(false);
+    await browser.click('btn-guide-next');
+    expect(browser.el('guide').hidden).toBe(true);
+    expect(app.snapshot()).toMatchObject({ level: 1, phase: 'playing', guide: false });
+  });
+
+  it('keeps the marble still while it is showing, and lets it roll afterwards', async () => {
+    const { app, browser } = await boot({ guide: 'stay' });
+    await browser.key('U');
+    await browser.swipe('U');
+    await browser.seconds(1);
+    expect(app.snapshot()).toMatchObject({ steps: 0, phase: 'playing' });
+    expect(app.game.pos).toBe(app.level.start);
+    // 被它挡着的按钮也按不动
+    await browser.click('btn-levels');
+    expect(app.snapshot().phase).toBe('playing');
+    expect(browser.el('tree').hidden).toBe(true);
+    await skipGuide(browser);
+    await play(browser, 'ULD');
+    await browser.seconds(2);
+    expect(app.snapshot()).toMatchObject({ steps: 3, phase: 'done' });
+  });
+
+  it('does not come back once it has been gone through', async () => {
+    const first = await boot();
+    expect(first.browser.storage.get(LEVEL)).toBe('1');
+    // 下次再来：同一个浏览器里存着的东西都还在
+    const again = await boot({ guide: 'stay', before: (b) => first.browser.storage.forEach((value, key) => b.storage.set(key, value)) });
+    expect(again.browser.el('guide').hidden).toBe(true);
+    expect(again.app.snapshot()).toMatchObject({ level: 1, phase: 'playing', guide: false });
+  });
+
+  it('comes up again, from its first step, for someone who left before the end of it', async () => {
+    const first = await boot({ guide: 'stay' });
+    await first.browser.click('btn-guide-next');
+    expect(first.browser.storage.has(LEVEL)).toBe(false);
+    const again = await boot({ guide: 'stay', before: (b) => first.browser.storage.forEach((value, key) => b.storage.set(key, value)) });
+    expect(again.browser.el('guide').hidden).toBe(false);
+    expect(again.browser.el('guide-count').textContent).toBe('第 1 步');
+  });
+
+  it('is not shown to someone who has played before', async () => {
+    // 只有老存档的人
+    const veteran = await boot({ bests: [3], guide: 'stay' });
+    expect(veteran.browser.el('guide').hidden).toBe(true);
+    expect(veteran.app.snapshot()).toMatchObject({ level: 2, guide: false });
+    // 存着数字的人，哪怕还停在第 1 关
+    const beginner = await boot({ reached: 1, guide: 'stay' });
+    expect(beginner.browser.el('guide').hidden).toBe(true);
+  });
+
+  it('does not take any room from the tray', async () => {
+    // 以前是摆在左下角的一块提示牌，托盘要给它让地方；现在是盖在上面的弹层，托盘该多大还多大
+    const withGuide = await boot({ guide: 'stay', screen: { width: 375, height: 667 } });
+    const without = await boot({ reached: 1, screen: { width: 375, height: 667 } });
+    expect(withGuide.app.view.stage.resizes.at(-1)!.safe).toEqual({ left: 10, right: 10, top: 94, bottom: 61 + 12 });
+    expect(without.app.view.stage.resizes.at(-1)!.safe).toEqual(withGuide.app.view.stage.resizes.at(-1)!.safe);
   });
 });
 
@@ -962,8 +1263,8 @@ describe('when the picture cannot be built', () => {
 });
 
 describe('whatever is pressed, in whatever order', () => {
-  // 乱按一气：方向键、滑动、撤销、重玩、回树、从树上进关、下一关、再来一次、改窗口大小，中间夹着长短不一的停顿。
-  // 每隔一阵停手等画面静下来，这时规则、画面、界面、存档必须全都对得上。
+  // 乱按一气：方向键、滑动、撤销、重玩、回树、从树上进关、下一关、再来一次、浏览器的后退和前进、改窗口大小，
+  // 中间夹着长短不一的停顿。每隔一阵停手等画面静下来，这时规则、画面、界面、地址、存档必须全都对得上。
   it.each([1, 2, 3, 4, 5, 6])('everything still agrees once things settle (seed %i)', async (seed) => {
     const { app, browser } = await boot({ bests: [9, 9, 9, 9, 9, 9], enter: 1 });
     const rand = seeded(seed);
@@ -973,6 +1274,11 @@ describe('whatever is pressed, in whatever order', () => {
 
     const act = async (): Promise<void> => {
       const r = rand();
+      // 不管在哪，偶尔按一下浏览器的后退或者前进（没有可去的那一项时等于没按）
+      if (r >= 0.9 && r < 0.96) {
+        await browser.travel(r < 0.94 ? -1 : 1);
+        return;
+      }
       if (onTree()) {
         // 在树上：多半是点一个木片进关（常常就是刚才那一关），有时按方向键、改窗口大小，有时什么都不做
         if (r < 0.6) await browser.click(browser.knots()[rand() < 0.45 ? app.index : Math.floor(rand() * 4)]);
@@ -1002,7 +1308,9 @@ describe('whatever is pressed, in whatever order', () => {
         const gap = rand() < 0.3 ? Math.floor(rand() * 4) : Math.floor(rand() * 40);
         for (let f = 0; f < gap; f++) await browser.frame(rand() < 0.01 ? 4000 : 1000 / 60);
       }
-      await browser.seconds(9);
+      // 停手之后最久的情形：托盘正在换的时候按了后退或前进，摆好了还要再换一次（两次加起来三秒多），
+      // 之后画面还要接着画六秒等染料变干
+      await browser.seconds(12);
 
       const where = `种子 ${seed} 第 ${round} 轮`;
       const { board } = app.view;
@@ -1035,6 +1343,11 @@ describe('whatever is pressed, in whatever order', () => {
       }
       const saved = JSON.parse(browser.storage.get(SAVE)!) as { done: object };
       expect(saved.done, where).toEqual(app.progress.done);
+      // 地址栏里写的就是现在这一关（在树上时是刚才那一关）；存着的"玩到第几关"和程序里记的一样，而且这一关没超过它
+      expect(browser.path, where).toBe(`/${app.index + 1}`);
+      expect(browser.storage.get(LEVEL), where).toBe(String(app.reached));
+      expect(app.index + 1, where).toBeLessThanOrEqual(app.reached);
+      expect(browser.el('guide').hidden, where).toBe(true);
       expect(Math.max(...browser.perFrame.slice(-600)), `${where}：一帧里画了不止一次`).toBeLessThanOrEqual(1);
     }
   });

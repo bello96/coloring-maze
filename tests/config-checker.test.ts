@@ -81,8 +81,19 @@ describe('checking one level', () => {
     checker.request('a', A);
     worker().reply({ verdict: RISKY });
     expect(last('a')).toEqual({ phase: 'repairing', verdict: RISKY });
-    worker().reply({ repair: null });
-    expect(last('a')).toEqual({ phase: 'done', verdict: RISKY, repair: null });
+    worker().reply({ repair: FIX });
+    expect(last('a')).toEqual({ phase: 'done', verdict: RISKY, repair: FIX });
+  });
+
+  it('takes a suggestion that comes before the verdict, and goes on waiting for the verdict', () => {
+    // 形状没问题的图，线程先找建议、再算最少步数（见 worker.ts）
+    checker.request('a', A);
+    worker().reply({ repair: FIX });
+    expect(last('a')).toEqual({ phase: 'solving', repair: FIX });
+    worker().reply({ verdict: RISKY });
+    expect(last('a')).toEqual({ phase: 'done', verdict: RISKY, repair: FIX });
+    worker().reply({ done: true });
+    expect(last('a')).toEqual({ phase: 'done', verdict: RISKY, repair: FIX });
   });
 
   it('uses one thread for one level after another', () => {
@@ -216,6 +227,32 @@ describe('when the thread takes too long or breaks', () => {
     expect(worker().terminated).toBe(false);
     worker().reply({ repair: FIX });
     expect(last('a')).toEqual({ phase: 'done', verdict: UNSOLVABLE, repair: FIX });
+  });
+
+  it('keeps the suggestion it already has when the fewest steps take too long, or the thread gives up or breaks', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // 三分钟到了
+    checker.request('a', A);
+    worker().reply({ repair: FIX });
+    vi.advanceTimersByTime(SOLVE_LIMIT_MS);
+    expect(last('a')).toEqual({ phase: 'timeout', repair: FIX });
+    // 线程自己说太难
+    checker.request('b', B);
+    worker().reply({ repair: FIX });
+    worker().reply({ tooHard: true });
+    expect(last('b')).toEqual({ phase: 'timeout', repair: FIX });
+    worker().reply({ done: true });
+    // 线程说这张图没算成
+    checker.request('c', C);
+    worker().reply({ repair: FIX });
+    worker().reply({ failed: 'the solver did not load' });
+    expect(last('c')).toEqual({ phase: 'failed', repair: FIX });
+    worker().reply({ done: true });
+    // 线程坏了
+    checker.request('a', A2);
+    worker().reply({ repair: FIX });
+    worker().onerror?.(new Error('wasm did not load'));
+    expect(last('a')).toEqual({ phase: 'failed', repair: FIX });
   });
 
   it('starts the three minutes afresh for each level', () => {

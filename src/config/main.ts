@@ -13,11 +13,11 @@ import { adviceText, precheck, publishNote, reportOf, type Report } from './chec
 import { Checker, type CheckState, type WorkerLike } from './checker.ts';
 import { Gate } from './gate.ts';
 import { Grid } from './grid.ts';
+import { brushForKey, type Brush } from './keys.ts';
 import { LevelList } from './list.ts';
 import { draftsOf, maxSide, moved, moveStart, newDraft, paint, resize, setOf, withRows, type Draft } from './model.ts';
 import { recentlyPublished, rememberPublished, type Store } from './published.ts';
 
-type Brush = 'wall' | 'floor' | 'start';
 const BRUSHES: readonly Brush[] = ['wall', 'floor', 'start'];
 
 /** 八种染料的名字，顺序和 DYES 一样。页面上不显示，是给读屏软件念的 */
@@ -25,7 +25,6 @@ const DYE_NAMES: readonly string[] = ['靛蓝', '茜红', '松绿', '藤黄', '�
 
 const PUBLISHED = '已发布，玩家刷新页面后生效（全球同步最长约一分钟）';
 const SEARCHING = '正在找修改建议…';
-const NO_ADVICE = '没找到六格以内的改法。小球得有地方能停下来：试试在长通道中间加一块墙';
 
 type Early = ReturnType<typeof precheck>;
 
@@ -136,6 +135,17 @@ class Editor {
         this.render();
       });
     }
+    // 画笔的快捷键：W 墙、F 地面、S 起点。正在输入框里打字、口令弹层开着（这时页面是点不动的）都不管
+    window.addEventListener('keydown', (event) => {
+      const target = event.target;
+      const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+      const brush = brushForKey(event, typing || el('bench').inert);
+      if (!brush) return;
+      event.preventDefault();
+      if (brush === this.brush) return;
+      this.brush = brush;
+      this.render();
+    });
     this.sizeRows.addEventListener('change', () => this.resizeBy(this.sizeRows, 0));
     this.sizeCols.addEventListener('change', () => this.resizeBy(this.sizeCols, 1));
     this.addButton.addEventListener('click', () => this.add());
@@ -198,7 +208,7 @@ class Editor {
     return kept.early;
   }
 
-  /** 这张图是不是保证不会走进死局。只对能通关的图有意义 */
+  /** 这张图是不是保证不会走进死局。只对便宜的那两步都过了的图有意义 */
   private safeOf(rows: readonly string[]): boolean {
     let safe = this.safes.get(rows);
     if (safe === undefined) {
@@ -213,10 +223,12 @@ class Editor {
     // 只在正看着这一关的时候才现查一遍给人看，不必一打开就把上百关都查一遍
     const known = draft.par !== null;
     const watching = draft.id === this.current;
+    const early = known && !watching ? null : this.earlyOf(draft.rows);
     return reportOf({
-      early: known && !watching ? null : this.earlyOf(draft.rows),
+      early,
       par: draft.par,
-      safe: known && watching ? this.safeOf(draft.rows) : true,
+      // 最少步数还在算的时候也查：不保证不会走进死局的图，修改建议比最少步数先到，页面得知道该不该等它
+      safe: watching && !early ? this.safeOf(draft.rows) : true,
       state: this.checks.get(draft.id),
     });
   }
@@ -444,7 +456,6 @@ class Editor {
     const { advice } = report;
     let hint = '';
     if (advice.kind === 'searching') hint = SEARCHING;
-    else if (advice.kind === 'missing') hint = NO_ADVICE;
     else if (advice.kind === 'found') hint = `建议：${adviceText(advice.repair.changes)}`;
     setText(this.adviceLine, hint);
     this.advice.hidden = hint === '';

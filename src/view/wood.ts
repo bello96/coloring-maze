@@ -405,3 +405,22 @@ export const TABLE: Omit<WoodSpec, 'size'> = {
   curl: 0.0,
   planks: 4,
 };
+
+/**
+ * 桌面（电脑上用的）：浅色的橡木板拼成，被灯照得亮堂堂的，深色的托盘放在上面一眼就看得见。
+ * 木板的拼法和 TABLE 一样，只是换了一种木头：颜色浅、偏黄褐，山纹宽而平。
+ */
+export const DESK: Omit<WoodSpec, 'size'> = {
+  ...TABLE,
+  seed: 31337,
+  dark: [118, 88, 58],
+  mid: [150, 118, 82],
+  light: [176, 145, 106],
+  pore: [92, 66, 42],
+  contrast: 0.34,
+  streak: 0.2,
+  blotch: 0.2,
+  fibre: 0.4,
+  pores: 0.42,
+  poreDepth: 0.4,
+};

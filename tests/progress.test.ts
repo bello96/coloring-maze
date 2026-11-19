@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { BUILTIN } from '../src/game/levelset.ts';
 import {
+  advanced,
   bestOf,
   emptyProgress,
   keysOf,
+  landing,
+  LEVEL_KEY,
   loadProgress,
   mergeProgress,
   OLD_SAVE_KEY,
   passed,
+  reachedFrom,
+  readReached,
   record,
   SAVE_KEY,
   stateOf,
-  topOpen,
   writeProgress,
   type LevelKey,
   type Progress,
@@ -22,7 +26,8 @@ const K = keysOf(BUILTIN);
 const keys = (...ids: string[]): LevelKey[] => ids.map((id) => ({ id, sig: `${id}1` }));
 /** 通过了这几关（每关 9 步） */
 const having = (list: readonly LevelKey[]): Progress => list.reduce((p, key) => record(p, key, 9), emptyProgress());
-const states = (p: Progress, list: readonly LevelKey[]): string[] => list.map((_, i) => stateOf(p, list, i));
+/** 玩到第 reached 关的人，一共 count 关的时候每一关是哪一种 */
+const states = (reached: number, count: number): string[] => Array.from({ length: count }, (_, i) => stateOf(reached, count, i));
 
 describe('where the save lives', () => {
   it('is under a new name, next to the old one', () => {
@@ -48,7 +53,7 @@ describe('reading a save', () => {
     const p = loadProgress(null, JSON.stringify({ best: K.map((_, i) => i + 3), last: 79, muted: false }));
     expect(Object.keys(p.done)).toHaveLength(80);
     expect(p.done.b80).toEqual({ best: 82, sig: K[79].sig });
-    expect(topOpen(p, K)).toBe(79);
+    expect(reachedFrom(p, K)).toBe(81);
   });
 
   it('skips what makes no sense in an old save', () => {
@@ -135,66 +140,90 @@ describe('recording a finished level', () => {
   });
 });
 
+describe('how far the player has got: one number', () => {
+  it('lives under its own name, as a bare number that can be changed by hand', () => {
+    expect(LEVEL_KEY).toBe('coloring-maze.level');
+    expect(readReached('12')).toBe(12);
+    expect(readReached('1')).toBe(1);
+    // 手改的时候多打了空格、带上了引号，也认
+    expect(readReached(' 7 ')).toBe(7);
+    expect(readReached('"40"')).toBe(40);
+  });
+
+  it.each([null, '', '0', '00', '-3', '1.5', 'abc', '12abc', '{}', 'NaN', '1e3', '12345678'])('reads %j as never having played', (raw) => {
+    expect(readReached(raw)).toBe(0);
+  });
+
+  it('is worked out from an older save: the level after the furthest one passed', () => {
+    expect(reachedFrom(having(K.slice(0, 11)), K)).toBe(12);
+    expect(reachedFrom(having(K), K)).toBe(81);
+    // 中间有没通过的也一样，看的是位置最靠后的那一关
+    const [a, b, c, d] = keys('a', 'b', 'c', 'd');
+    expect(reachedFrom(having([a, c]), [a, b, c, d])).toBe(4);
+  });
+
+  it('is zero, never played, for a save without a single level passed', () => {
+    expect(reachedFrom(emptyProgress(), K)).toBe(0);
+    expect(reachedFrom({ ...emptyProgress(), muted: true }, K)).toBe(0);
+  });
+
+  it('is the first level for someone whose save knows none of the levels there are now', () => {
+    // 玩过，所以不是 0；但这份关卡表里的关一关都没通过
+    expect(reachedFrom(having(K.slice(0, 30)), keys('n1', 'n2', 'n3'))).toBe(1);
+    expect(reachedFrom(having(K.slice(0, 30)), [])).toBe(1);
+  });
+
+  it('counts a level as passed whatever happened to its map since', () => {
+    const p = record(emptyProgress(), { id: 'a', sig: 'old map' }, 4);
+    expect(reachedFrom(p, keys('a', 'b', 'c'))).toBe(2);
+  });
+
+  it('keeps a veteran where they were when levels are put in or moved', () => {
+    // 通过了前 60 关，第 5 位插进一关：原来轮到的第 61 关现在排第 62
+    const list = [...K.slice(0, 4), { id: 'x1', sig: 'new' }, ...K.slice(4)];
+    expect(reachedFrom(having(K.slice(0, 60)), list)).toBe(62);
+    // 换了顺序：通过的两关挪到了第 2、3 位，轮到的是它们后面那一关
+    const [a, b, c, d] = keys('a', 'b', 'c', 'd');
+    expect(reachedFrom(having([a, b]), [c, a, b, d])).toBe(4);
+  });
+
+  it('moves on by one when the level in turn is passed, and stays put when an earlier one is played again', () => {
+    expect(advanced(3, 2)).toBe(4);
+    expect(advanced(3, 0)).toBe(3);
+    expect(advanced(3, 1)).toBe(3);
+    // 没记下过数字的人（比如浏览器不让存）通过了第 1 关
+    expect(advanced(0, 0)).toBe(2);
+    // 通过了最后一关：比关数多一，表示全通了
+    expect(advanced(80, 79)).toBe(81);
+  });
+});
+
 describe('which levels can be played', () => {
   it('is only the first one for a new player', () => {
-    const list = keys('a', 'b', 'c');
-    expect(states(emptyProgress(), list)).toEqual(['open', 'locked', 'locked']);
-    expect(topOpen(emptyProgress(), list)).toBe(0);
+    expect(states(0, 3)).toEqual(['open', 'locked', 'locked']);
+    expect(states(1, 3)).toEqual(['open', 'locked', 'locked']);
+    expect(landing(0, 3)).toBe(0);
+    expect(landing(1, 3)).toBe(0);
   });
 
-  it('is every level passed plus the one right after', () => {
-    const list = keys('a', 'b', 'c', 'd');
-    const p = having(list.slice(0, 2));
-    expect(states(p, list)).toEqual(['done', 'done', 'open', 'locked']);
-    expect(topOpen(p, list)).toBe(2);
+  it('is every level before the one reached, plus that one', () => {
+    expect(states(3, 4)).toEqual(['done', 'done', 'open', 'locked']);
+    expect(landing(3, 4)).toBe(2);
   });
 
-  it('stays the last level when everything has been passed', () => {
-    const list = keys('a', 'b', 'c');
-    const p = having(list);
-    expect(states(p, list)).toEqual(['done', 'done', 'done']);
-    expect(topOpen(p, list)).toBe(2);
-  });
-
-  it('opens a level put in the middle without locking anything a veteran already had', () => {
-    // 设计文档里的例子：通过了前 60 关，第 5 位插进一关
-    const p = having(K.slice(0, 60));
-    const list = [...K.slice(0, 4), { id: 'x1', sig: 'new' }, ...K.slice(4)];
-    expect(list).toHaveLength(81);
-    expect(stateOf(p, list, 3)).toBe('done');
-    expect(stateOf(p, list, 4)).toBe('open'); // 新插的那一关
-    expect(stateOf(p, list, 5)).toBe('done'); // 原来的第 5 关
-    expect(stateOf(p, list, 60)).toBe('done'); // 原来的第 60 关
-    expect(stateOf(p, list, 61)).toBe('open'); // 原来轮到的第 61 关
-    expect(stateOf(p, list, 62)).toBe('locked');
-    expect(topOpen(p, list)).toBe(61);
-  });
-
-  it('follows the levels when their order is changed', () => {
-    const [a, b, c, d] = keys('a', 'b', 'c', 'd');
-    const p = having([a, b]);
-    expect(states(p, [c, a, b, d])).toEqual(['open', 'done', 'done', 'open']);
-    expect(topOpen(p, [c, a, b, d])).toBe(3);
-  });
-
-  it('counts a passed level as passed whatever happened to its map', () => {
-    const list = keys('a', 'b', 'c');
-    const p = record(emptyProgress(), { id: 'a', sig: 'old map' }, 4);
-    expect(states(p, list)).toEqual(['done', 'open', 'locked']);
-  });
-
-  it('opens the first level of a set none of whose levels the player has seen', () => {
-    const p = having(K.slice(0, 30));
-    const list = keys('n1', 'n2', 'n3');
-    expect(states(p, list)).toEqual(['open', 'locked', 'locked']);
-    expect(topOpen(p, list)).toBe(0);
+  it('is every level once the last one has been passed, and the game then opens on the last', () => {
+    expect(states(4, 3)).toEqual(['done', 'done', 'done']);
+    expect(landing(4, 3)).toBe(2);
+    // 手改成一个比关数大得多的数也一样
+    expect(states(999, 3)).toEqual(['done', 'done', 'done']);
+    expect(landing(999, 3)).toBe(2);
   });
 
   it('says locked for a position outside the set', () => {
-    const list = keys('a', 'b');
-    expect(stateOf(emptyProgress(), list, -1)).toBe('locked');
-    expect(stateOf(emptyProgress(), list, 2)).toBe('locked');
-    expect(topOpen(emptyProgress(), [])).toBe(-1);
+    expect(stateOf(1, 2, -1)).toBe('locked');
+    expect(stateOf(2, 2, 2)).toBe('locked');
+    expect(stateOf(999, 2, 2)).toBe('locked');
+    expect(landing(1, 0)).toBe(-1);
   });
 });
 

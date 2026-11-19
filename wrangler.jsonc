@@ -16,7 +16,12 @@
     // Worker 里用 env.ASSETS.fetch(request) 把不归接口管的请求交还给静态资源
     "binding": "ASSETS",
     // 只有 /api/ 下的请求先跑 Worker。别的路径照旧先找静态文件，找到了直接回，不经过 Worker；
-    // 找不到文件的请求（比如乱敲的地址）也会到 Worker，由它交还给静态资源去回 404。
+    // 找不到文件的请求也会到 Worker（文档的说法："If no asset matches, Cloudflare invokes that version's fetch() handler"）。
+    // 这里面有一种是我们自己的：关卡的地址，/12 是第 12 关——没有这么个文件，Worker 认出它，回游戏那一页
+    // （见 worker/index.ts）；其余的（乱敲的地址）由它交还给静态资源去回 404。
+    // 没有用 not_found_handling 的 "single-page-application"：那样任何不存在的地址（包括缺了的脚本文件）回的都是游戏那一页，
+    // 而且浏览器直接打开和脚本去取走的还不是同一条路（2026-11-19 对着文档核对的）；只认关卡地址更简单，也说得清。
+    //   https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/
     // 规则的写法：每条以 / 开头；* 能顶任意一串字符（斜杠也算），所以 "/api/*" 管 /api/ 和它下面的一切，
     // 不含 /api 本身；只比路径，不看查询串。以 !/ 开头的是反过来的规则（交给静态资源），比正的规则优先。
     // 最多 100 条，先后顺序无所谓。
@@ -56,8 +61,10 @@
   //
   // 二、请求数：跑了 Worker 的请求每天 10 万次，UTC 零点清零。静态文件的请求不算在内，也不限量
   //    （"Requests to static assets are free and unlimited"）。按上面的规则，算数的只有 /api/* 和找不到文件的请求：
-  //    玩家每打开一次游戏读一次 /api/levels，算一次。额度用完之后，/api/* 回 429，静态文件照常——
-  //    游戏拿不到线上的关卡，就用上次留的那份或者内置的 80 关，不会打不开。
+  //    玩家每打开一次游戏读一次 /api/levels，算一次；从网站的根地址 / 进来的话页面本身是静态文件，不算，
+  //    直接打开某一关的地址（/12，在那一关里刷新也是）页面要经过 Worker，多算一次。在游戏里换关只改地址栏，不发请求。
+  //    额度用完之后，/api/* 回 429，静态文件照常——游戏拿不到线上的关卡，就用上次留的那份或者内置的 80 关，
+  //    从根地址 / 进来不会打不开（直接打开关卡地址的请求这时会怎样，文档没有说，按打不开算）。
   //      https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/
   //      https://developers.cloudflare.com/workers/platform/pricing/
   "routes": [
