@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import type { Level } from '../game/level.ts';
-import { BASE_THICKNESS, BORDER, FLOOR_SIZE, OUTER, trayDims } from './dims.ts';
+import { BASE_THICKNESS, FLOOR_SIZE, OUTER, trayDims } from './dims.ts';
 import { traceFloor, type Point } from './outline.ts';
 import { Stain } from './stain.ts';
 
+/** 托盘四角的圆角；边框比它窄的时候跟着边框收小，不然圆角会切进迷宫里 */
 const CORNER_RADIUS = 0.5;
 const BEVEL = 0.028;
 
@@ -11,13 +12,10 @@ const BEVEL = 0.028;
 export interface TrayAssets {
   readonly birch: THREE.Texture;
   readonly birchRelief: THREE.Texture;
-  /** 没刻字的面板木纹；每个托盘在它上面刻上自己的字 */
-  readonly walnut: HTMLCanvasElement;
-  readonly walnutRelief: HTMLCanvasElement;
+  /** 面板的木纹（已经横过来了）。一张图对应 OUTER 那么长，每个托盘从左上角起用其中托盘那么大的一块 */
+  readonly panel: THREE.Texture;
+  readonly panelRelief: THREE.Texture;
   readonly plyEdge: THREE.Texture;
-  readonly anisotropy: number;
-  /** 刻字用的字体 */
-  readonly font: string;
   /** 主光照过来的方向（光线前进的方向） */
   readonly sun: THREE.Vector3;
 }
@@ -53,7 +51,7 @@ export class Tray {
   readonly ballRadius: number;
   private readonly owned: Array<{ dispose(): void }> = [];
 
-  constructor(level: Level, number: number, assets: TrayAssets, dye: THREE.Color) {
+  constructor(level: Level, assets: TrayAssets, dye: THREE.Color) {
     this.level = level;
     const { rows, cols } = level;
     const dims = trayDims(rows, cols);
@@ -64,27 +62,28 @@ export class Tray {
     this.ballRadius = 0.4 * this.cell;
     this.stain = new Stain(level, dye, assets.sun, dims.floorWidth, dims.floorDepth);
     this.owned.push(this.stain);
+    const corner = Math.min(CORNER_RADIUS, dims.border);
 
     // 格线交点 → 面板轮廓用的平面坐标（x 向右，y 向屏幕上方，也就是世界的 -z）
     const toShape = ([gx, gy]: Point): THREE.Vector2 => new THREE.Vector2((gx - cols / 2) * this.cell, -(gy - rows / 2) * this.cell);
     const outline = traceFloor(level);
 
-    const panelMap = this.engrave(assets, number);
     const top = new THREE.MeshStandardMaterial({
-      map: panelMap.color,
-      bumpMap: panelMap.relief,
+      map: assets.panel,
+      bumpMap: assets.panelRelief,
       bumpScale: 1.1,
       roughness: 0.58,
     });
     // 激光切出来的断面是焦黑的
     const cut = new THREE.MeshStandardMaterial({ color: 0x33211a, roughness: 0.84 });
-    this.owned.push(top, cut, panelMap.color, panelMap.relief);
+    this.owned.push(top, cut);
 
-    // 面板顶面的贴图：一张木纹正好铺满托盘，所以边框和中间的每块墙像是从同一张板上切下来的
+    // 面板顶面的贴图：边框和中间的每块墙用的是同一张木纹上连着的一块，像是从同一张板上切下来的。
+    // 木纹按实际大小铺（一张图对应 OUTER 那么长），大小不一样的托盘木纹一样粗细
     const { width, depth } = this;
     const uvGenerator = {
       generateTopUV(_g: THREE.ExtrudeGeometry, v: number[], a: number, b: number, c: number): THREE.Vector2[] {
-        return [a, b, c].map((i) => new THREE.Vector2((v[i * 3] + width / 2) / width, (depth / 2 - v[i * 3 + 1]) / depth));
+        return [a, b, c].map((i) => new THREE.Vector2((v[i * 3] + width / 2) / OUTER, (depth / 2 - v[i * 3 + 1]) / OUTER));
       },
       generateSideWallUV(_g: THREE.ExtrudeGeometry, v: number[], a: number, b: number, c: number, d: number): THREE.Vector2[] {
         const alongX = Math.abs(v[a * 3 + 1] - v[b * 3 + 1]) < Math.abs(v[a * 3] - v[b * 3]);
@@ -112,7 +111,7 @@ export class Tray {
       this.owned.push(geometry);
     };
 
-    const frame = roundedRect(width, depth, CORNER_RADIUS);
+    const frame = roundedRect(width, depth, corner);
     frame.holes.push(new THREE.Path(outline.outer.map(toShape)));
     addPanel(frame);
     for (const island of outline.islands) addPanel(new THREE.Shape(island.map(toShape)));
@@ -140,7 +139,7 @@ export class Tray {
     this.group.add(floor);
     this.owned.push(floorGeometry, floorMaterial);
 
-    const baseGeometry = new THREE.ExtrudeGeometry(roundedRect(width, depth, CORNER_RADIUS), {
+    const baseGeometry = new THREE.ExtrudeGeometry(roundedRect(width, depth, corner), {
       depth: BASE_THICKNESS - 0.004,
       bevelEnabled: false,
       curveSegments: 8,
@@ -154,64 +153,6 @@ export class Tray {
     base.receiveShadow = true;
     this.group.add(base);
     this.owned.push(baseGeometry, baseFace, baseEdge);
-  }
-
-  /** 在面板的木纹上刻字：上边框刻游戏名，下边框刻第几关 */
-  private engrave(assets: TrayAssets, number: number): { color: THREE.CanvasTexture; relief: THREE.CanvasTexture } {
-    // 木纹那张图的一条边对应托盘最长能有的长度；托盘短的那一边只用到其中一截
-    const full = assets.walnut.width;
-    const draw = (source: HTMLCanvasElement, s: number, ink: string, edge: string | null): HTMLCanvasElement => {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round((s * this.width) / OUTER);
-      canvas.height = Math.round((s * this.depth) / OUTER);
-      const ctx = canvas.getContext('2d')!;
-      // 面板的木纹横着走，和底板的竖纹交错（夹板就是这样一层横一层竖）
-      ctx.save();
-      ctx.translate(s, 0);
-      ctx.rotate(Math.PI / 2);
-      ctx.drawImage(source, 0, 0, s, s);
-      ctx.restore();
-      const band = (BORDER / OUTER) * s;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const text = (str: string, y: number, px: number, gap: number): void => {
-        ctx.font = `700 ${px}px ${assets.font}`;
-        const chars = [...str];
-        const widths = chars.map((ch) => ctx.measureText(ch).width);
-        const total = widths.reduce((a, b) => a + b, 0) + gap * (chars.length - 1);
-        let x = canvas.width / 2 - total / 2;
-        const lip = s / 1024;
-        chars.forEach((ch, i) => {
-          const cx = x + widths[i] / 2;
-          if (edge) {
-            // 字是凹下去的：左上的内壁背光，留一道深色的边
-            ctx.fillStyle = edge;
-            ctx.fillText(ch, cx - lip, y - lip);
-          }
-          ctx.fillStyle = ink;
-          ctx.fillText(ch, cx, y);
-          x += widths[i] + gap;
-        });
-      };
-      text('染色迷宫', band * 0.5, band * 0.5, band * 0.2);
-      text(`第 ${number} 关`, canvas.height - band * 0.5, band * 0.36, band * 0.04);
-      return canvas;
-    };
-    // 刻出来的字里填了米白色的漆，在深色木头上才看得清
-    const color = new THREE.CanvasTexture(draw(assets.walnut, full, 'rgba(236, 220, 188, 0.93)', 'rgba(22, 11, 5, 0.7)'));
-    color.colorSpace = THREE.SRGBColorSpace;
-    color.flipY = false;
-    color.anisotropy = assets.anisotropy;
-    // 起伏图上把字涂暗：字是凹下去的
-    const relief = new THREE.CanvasTexture(draw(assets.walnutRelief, full, 'rgba(0, 0, 0, 0.6)', null));
-    relief.flipY = false;
-    // 这两张画布很大。手机浏览器给画布的内存有上限，光等垃圾回收来不及，
-    // 所以托盘用完时把它们缩成零，马上把内存还回去。
-    for (const texture of [color, relief]) {
-      const canvas = texture.image as HTMLCanvasElement;
-      this.owned.push({ dispose: () => void (canvas.width = canvas.height = 0) });
-    }
-    return { color, relief };
   }
 
   /** 托盘上 (x, z) 这个位置是不是迷宫里的地面 */

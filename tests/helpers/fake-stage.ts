@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import type { Extent, Insets, WoodUrls } from '../../src/view/stage.ts';
 
-/** 正方形托盘的大小（和真舞台里的一样：外边长 12.5 的一半） */
+/** 正方形托盘的大小（和真舞台里的一样：托盘最长能有的 12.5 的一半） */
 export const SQUARE: Extent = { halfWidth: 6.25, halfDepth: 6.25 };
 
 export class Stage {
@@ -14,16 +14,13 @@ export class Stage {
   readonly resizes: Array<{ width: number; height: number; pixelRatio: number; safe: Insets; box: Extent }> = [];
   readonly assets: unknown;
 
-  constructor(_canvas: unknown, font: string) {
-    const canvas = (): unknown => document.createElement('canvas');
+  constructor(_canvas: unknown) {
     this.assets = {
       birch: new THREE.Texture(),
       birchRelief: new THREE.Texture(),
-      walnut: canvas(),
-      walnutRelief: canvas(),
+      panel: new THREE.Texture(),
+      panelRelief: new THREE.Texture(),
       plyEdge: new THREE.Texture(),
-      anisotropy: 1,
-      font,
       sun: new THREE.Vector3(9.5, -12.5, 7.5).normalize(),
     };
   }

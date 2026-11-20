@@ -63,9 +63,9 @@ export class Hud {
     if (!on) this.result.hidden = true;
   }
 
-  /** 换了一关：最少步数和染料颜色 */
-  setLevel(par: number, dye: string): void {
-    this.par.textContent = `最少 ${par} 步`;
+  /** 换了一关：第几关（从 1 数起）、最少步数和染料颜色 */
+  setLevel(number: number, par: number, dye: string): void {
+    this.par.textContent = `第 ${number} 关 · 最少 ${par} 步`;
     document.documentElement.style.setProperty('--dye', dye);
   }
 

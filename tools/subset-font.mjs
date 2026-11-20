@@ -30,11 +30,12 @@ function stripComments(code) {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-// 只看游戏那一页会把字显示出来的地方：页面本身、界面、主控制器（src/ 下的 app.ts、main.ts），以及在托盘上刻字的那个文件。
+// 只看游戏那一页会把字显示出来的地方：页面本身、界面、主控制器（src/ 下的 app.ts、main.ts）。
 // 规则和求解器里的汉字都是给开发者看的报错，不用收；配置页（src/config/）不用这套字体，它的字也不收。
-const shown = (f) => /\.ts$/.test(f) && (/[\\/]ui[\\/]/.test(f) || /^src[\\/](app|main)\.ts$/.test(f) || /[\\/]view[\\/]tray\.ts$/.test(f));
+const shown = (f) => /\.ts$/.test(f) && (/[\\/]ui[\\/]/.test(f) || /^src[\\/](app|main)\.ts$/.test(f));
 const files = ['index.html', ...walk('src').filter(shown)];
-const chars = new Set('0123456789 ，');
+// 汉字以外界面上用到的几个字符：数字、空格、逗号，和「第 3 关 · 最少 5 步」里的那个点
+const chars = new Set('0123456789 ，·');
 for (const file of files) {
   for (const ch of stripComments(readFileSync(file, 'utf8'))) {
     if (/[一-鿿]/.test(ch)) chars.add(ch);

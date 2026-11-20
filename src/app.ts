@@ -81,12 +81,12 @@ export class App {
   /** 托盘还在换的时候按了浏览器的后退、前进：先记着要去第几关（从 0 数起），等它摆好了再换 */
   private wantsLevel: number | null = null;
 
-  constructor(canvas: HTMLCanvasElement, font: string) {
+  constructor(canvas: HTMLCanvasElement) {
     this.progress = loadProgress(read(SAVE_KEY), read(OLD_SAVE_KEY));
     this.sound.setMuted(this.progress.muted);
     // 回到选关树之后，没演完的动画还会在树底下接着演（见 GameView.cover）；那时它弄出来的动静不该再出声
     const heard = (): boolean => this.phase !== 'tree';
-    this.view = new GameView(canvas, font, {
+    this.view = new GameView(canvas, {
       impact: (strength) => void (heard() && this.sound.impact(strength)),
       land: (strength) => void (heard() && this.sound.land(strength)),
       rolling: (speed) => this.sound.rolling(heard() ? speed : 0),
@@ -320,11 +320,11 @@ export class App {
     this.def = this.facing(entry);
     this.level = parseLevel(this.def.rows);
     this.game = newGame(this.level);
-    this.hud.setLevel(entry.par, entry.dye);
+    this.hud.setLevel(index + 1, entry.par, entry.dye);
     this.hud.setSteps(0);
     this.relayout(true);
     try {
-      await this.view.enter(this.level, index + 1, dyeNumber(entry.dye));
+      await this.view.enter(this.level, dyeNumber(entry.dye));
     } catch (err) {
       // 托盘建不出来（比如手机上内存不够了）：停在这里并说明，而不是从此按什么都没反应
       showBroken(err);

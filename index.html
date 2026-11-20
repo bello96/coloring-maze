@@ -52,9 +52,14 @@
     </section>
 
     <!-- 新手指引：第一次来的人先看到的分步弹层，盖在第 1 关上面，一步一页（见 src/ui/guide.ts）。
-         每页一段会动的小演示加一句话。第一步在电脑上演方向键、在触屏上演手指滑动，由样式表按设备分 -->
+         木牌最上面刻着游戏名和一句"这是个什么游戏"，每一页都在；下面每页一段会动的小演示加一句话。
+         第一步在电脑上演方向键、在触屏上演手指滑动，由样式表按设备分 -->
     <div class="guide" id="guide" hidden>
-      <section class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guide-count">
+      <section class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guide-title" aria-describedby="guide-intro">
+        <header class="guide-head">
+          <h1 class="guide-title" id="guide-title">染色迷宫</h1>
+          <p class="guide-intro" id="guide-intro">一款滚动小球、给迷宫染色的益智游戏</p>
+        </header>
         <p class="guide-count" id="guide-count"></p>
 
         <div class="guide-page" id="guide-page-1">

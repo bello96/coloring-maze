@@ -103,7 +103,7 @@ async function boot(options: BootOptions = {}): Promise<{ browser: FakeBrowser; 
   if (options.reached !== undefined) browser.storage.set(LEVEL, String(options.reached));
   options.before?.(browser);
   const { App } = await import('../src/app.ts');
-  const made = new App(browser.el('stage') as never, 'serif');
+  const made = new App(browser.el('stage') as never);
   const app = made as unknown as Inner;
   made.start(options.set ?? BUILTIN);
   if (options.guide !== 'stay') await skipGuide(browser);
@@ -180,7 +180,7 @@ describe('playing a level', () => {
     const { app, browser } = await boot();
     expect(app.snapshot()).toMatchObject({ level: 1, steps: 0, phase: 'playing' });
     expect(browser.el('steps').textContent).toBe('0');
-    expect(browser.el('par').textContent).toBe('最少 3 步');
+    expect(browser.el('par').textContent).toBe('第 1 关 · 最少 3 步');
     expect(browser.el('tally').hidden).toBe(false);
     expect(stainMatchesRules(app)).toBe(true);
     expect(marbleOffCentre(app)).toBeLessThan(1e-9);
@@ -297,8 +297,8 @@ describe('a level set other than the built-in one', () => {
     const entered = vi.spyOn(GameView.prototype, 'enter');
     const { app, browser } = await boot({ set: custom });
     expect(app.snapshot()).toMatchObject({ level: 1, id: 'x1', phase: 'playing' });
-    expect(browser.el('par').textContent).toBe('最少 6 步');
-    expect(entered.mock.calls[0][2]).toBe(0x123456);
+    expect(browser.el('par').textContent).toBe('第 1 关 · 最少 6 步');
+    expect(entered.mock.calls[0][1]).toBe(0x123456);
     expect(browser.document.documentElement.style.props['--dye']).toBe('#123456');
     await play(browser, custom.levels[0].solution);
     await browser.seconds(2);
@@ -307,7 +307,8 @@ describe('a level set other than the built-in one', () => {
     await browser.click('btn-next');
     await browser.seconds(3);
     expect(app.snapshot()).toMatchObject({ level: 2, id: 'b01', phase: 'playing' });
-    expect(entered.mock.calls[1][2]).toBe(0x2646b8);
+    expect(entered.mock.calls[1][1]).toBe(0x2646b8);
+    expect(browser.el('par').textContent).toBe('第 2 关 · 最少 3 步');
     expect(browser.document.documentElement.style.props['--dye']).toBe('#2646b8');
     // 一共只有两关：第 2 关后面没有"下一关"
     await play(browser, 'ULD');
@@ -368,7 +369,7 @@ describe('moving between levels', () => {
     await browser.seconds(3);
     expect(app.snapshot()).toMatchObject({ level: 2, steps: 0, phase: 'playing' });
     expect(browser.el('result').hidden).toBe(true);
-    expect(browser.el('par').textContent).toBe('最少 5 步');
+    expect(browser.el('par').textContent).toBe('第 2 关 · 最少 5 步');
     expect(app.view.stage.board.children).toHaveLength(1);
     expect(app.view.board.tray.level).toBe(app.level);
   });
@@ -1315,13 +1316,15 @@ describe('a rectangular level', () => {
   // 第 51 关：存的是 19 行 × 15 列
   const upTo51 = { bests: new Array<number>(LEVELS.length).fill(999), enter: 51 };
   const WIDE = { width: 1280, height: 720 };
+  // 底板长的一边（19 格）总是 10 长；四周的边框是一格的 0.4 倍
+  const border = 0.4 * (10 / 19);
 
   it('stands upright on a tall screen', async () => {
     const { app } = await boot(upTo51);
     expect([app.level.rows, app.level.cols]).toEqual([19, 15]);
     const { tray } = app.view.board;
-    expect(tray.depth).toBeCloseTo(12.5, 9);
-    expect(tray.width).toBeCloseTo((15 * 10) / 19 + 2.5, 9);
+    expect(tray.depth).toBeCloseTo(10 + 2 * border, 9);
+    expect(tray.width).toBeCloseTo((15 * 10) / 19 + 2 * border, 9);
     expect(app.snapshot().solution).toBe(LEVELS[50].solution);
   });
 
@@ -1329,11 +1332,11 @@ describe('a rectangular level', () => {
     const { app, browser } = await boot({ ...upTo51, screen: WIDE });
     expect([app.level.rows, app.level.cols]).toEqual([15, 19]);
     const { tray } = app.view.board;
-    expect(tray.width).toBeCloseTo(12.5, 9);
-    expect(tray.depth).toBeCloseTo((15 * 10) / 19 + 2.5, 9);
+    expect(tray.width).toBeCloseTo(10 + 2 * border, 9);
+    expect(tray.depth).toBeCloseTo((15 * 10) / 19 + 2 * border, 9);
     // 还是同一关：地面一样多，最少步数一样
     expect(app.level.floorCount).toBe(LEVELS[50].rows.join('').replaceAll('#', '').length);
-    expect(browser.el('par').textContent).toBe(`最少 ${LEVELS[50].par} 步`);
+    expect(browser.el('par').textContent).toBe(`第 51 关 · 最少 ${LEVELS[50].par} 步`);
   });
 
   it('is framed by its own size, not by the size of a square tray', async () => {
@@ -1375,14 +1378,17 @@ describe('a rectangular level', () => {
   it('has the camera glide to fit while a tray of another shape slides in', async () => {
     const { app, browser } = await boot({ ...upTo51, enter: 50, screen: WIDE });
     const stage = app.view.stage;
-    expect(stage.resizes.at(-1)!.box).toEqual({ halfWidth: 6.25, halfDepth: 6.25 });
+    // 第 50 关是 15×15 的正方形
+    const square = (10 + 2 * 0.4 * (10 / 15)) / 2;
+    expect(stage.resizes.at(-1)!.box.halfWidth).toBeCloseTo(square, 9);
+    expect(stage.resizes.at(-1)!.box.halfDepth).toBeCloseTo(square, 9);
     const before = stage.resizes.length;
     await enter(browser, 51);
     const depths = stage.resizes.slice(before).map((r) => r.box.halfDepth);
     const target = app.view.board.tray.depth / 2;
     expect(depths.at(-1)).toBeCloseTo(target, 9);
     // 不是一下子跳过去的：中间经过了好些大小
-    expect(depths.filter((d) => d < 6.25 - 1e-6 && d > target + 1e-6).length).toBeGreaterThan(10);
+    expect(depths.filter((d) => d < square - 1e-6 && d > target + 1e-6).length).toBeGreaterThan(10);
     for (let i = 1; i < depths.length; i++) expect(depths[i]).toBeLessThanOrEqual(depths[i - 1] + 1e-9);
   });
 });

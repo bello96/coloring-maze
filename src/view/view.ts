@@ -34,9 +34,10 @@ const LINGER = 6;
 
 /**
  * 弹珠滚动时托盘朝那个方向倾斜多少（弧度）：像是有人把托盘的一边稍稍抬起来让球滚。
- * 只要一点点（半度多一些，托盘边上抬起两三个像素）：再大的话每走一步整个画面都跟着晃，看着累。
+ * 只要隐约看得出来就够（0.2 度多一点，电脑上托盘边抬起一两个像素）：大了每走一步整个画面都跟着晃，看着累。
+ * 0.034 和 0.011 都试过，玩的人都嫌太明显。
  */
-const TILT = 0.011;
+const TILT = 0.004;
 /**
  * 倾斜和放平要多久（秒，越小越快）。
  * 托盘在动的每一帧影子都要重画，所以不能拖得太久：幅度小了之后用 0.06，从抬起到放平用的帧数和原来差不多。
@@ -90,8 +91,8 @@ export class GameView {
   /** 画面被别的东西整个盖住了（选关树亮着），见 cover */
   private covered = false;
 
-  constructor(canvas: HTMLCanvasElement, font: string, events: ViewEvents) {
-    this.stage = new Stage(canvas, font);
+  constructor(canvas: HTMLCanvasElement, events: ViewEvents) {
+    this.stage = new Stage(canvas);
     this.events = events;
     this.budget = isModestGpu(this.stage.gpuName()) ? 3_000_000 : 6_000_000;
   }
@@ -277,9 +278,9 @@ export class GameView {
    * 摆上一关的托盘，然后让弹珠落到起点。
    * 新托盘从右边滑进来；桌上已经有托盘的话，旧的同时往左滑走。弹珠第一次落地时结束等待（这时就可以操作了）。
    */
-  async enter(level: Level, number: number, dyeHex: number): Promise<void> {
+  async enter(level: Level, dyeHex: number): Promise<void> {
     const dye = new THREE.Color(dyeHex);
-    const tray = new Tray(level, number, this.stage.assets, dye);
+    const tray = new Tray(level, this.stage.assets, dye);
     const marble = new Marble(tray.ballRadius, dye);
     const drops = new Drops(dye, (x, z) => tray.isFloorAt(x, z));
     marble.group.visible = false;

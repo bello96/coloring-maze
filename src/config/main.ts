@@ -17,6 +17,7 @@ import { brushForKey, type Brush } from './keys.ts';
 import { LevelList } from './list.ts';
 import { draftsOf, maxSide, moved, moveStart, newDraft, paint, resize, setOf, withRows, type Draft } from './model.ts';
 import { recentlyPublished, rememberPublished, type Store } from './published.ts';
+import { Tip } from './tip.ts';
 
 const BRUSHES: readonly Brush[] = ['wall', 'floor', 'start'];
 
@@ -88,6 +89,8 @@ class Editor {
   private readonly checker: Checker;
   private readonly grid: Grid;
   private readonly list: LevelList;
+  /** 用快捷键换了画笔时，托盘上方亮一下的那句话 */
+  private readonly tip = new Tip(el('brush-tip'));
 
   private readonly title = el('level-title');
   private readonly sizeRows = el<HTMLInputElement>('size-rows');
@@ -139,13 +142,15 @@ class Editor {
         this.render();
       });
     }
-    // 画笔的快捷键：W 墙、F 地面、S 起点。正在输入框里打字、口令弹层开着（这时页面是点不动的）都不管
+    // 画笔的快捷键：W 墙、F 地面、S 起点。正在输入框里打字、口令弹层开着（这时页面是点不动的）都不管。
+    // 按了就在托盘上方亮一句换成了哪一支（按的正是现在这一支也亮，让人知道这一下按到了）
     window.addEventListener('keydown', (event) => {
       const target = event.target;
       const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
       const brush = brushForKey(event, typing || el('bench').inert);
       if (!brush) return;
       event.preventDefault();
+      this.tip.say(`画笔已切换到「${el(`brush-${brush}`).textContent}」`);
       if (brush === this.brush) return;
       this.brush = brush;
       this.render();

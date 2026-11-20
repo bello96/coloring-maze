@@ -204,10 +204,12 @@ body {
 }
 
 /* ───── 新手指引：第一次来的人先看到的分步弹层 ─────
-   盖在第 1 关上面的一块木牌，一步一页：上面是一段会动的小演示，下面一句话；底下一排点和「下一步」。
+   盖在第 1 关上面的一块木牌。最上面刻着游戏名和一句"这是个什么游戏"，每一页都在；
+   下面一步一页：一段会动的小演示，一句话；底下一排点和「下一步」。
    演示里的小托盘、弹珠、染料都是样式表画的，动的只有位置、大小和透明度，不费电。
    第一步在电脑上演方向键，在触屏上演手指滑动（见这一节末尾）。 */
 
+/* 底下的画面压得很暗，看不清：先看木牌上的字 */
 .guide {
   position: fixed;
   inset: 0;
@@ -216,7 +218,7 @@ body {
   box-sizing: border-box;
   padding: 16px;
   overflow: auto;
-  background: rgba(14, 8, 4, 0.5);
+  background: rgba(0, 0, 0, 0.8);
   animation: guide-in 0.3s ease-out both;
 }
 
@@ -248,6 +250,34 @@ body {
     opacity: 0;
     transform: translateY(32px);
   }
+}
+
+/* 木牌的头：游戏名刻得大大的，下面一句小字；再往下一道刻出来的线（深色的槽，底下一道受光的边） */
+.guide-head {
+  margin-bottom: 14px;
+  padding: 4px 0 14px;
+  border-bottom: 1px solid rgba(20, 10, 5, 0.55);
+  box-shadow: 0 1px 0 rgba(255, 232, 196, 0.12);
+}
+
+.guide-title {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.25;
+  letter-spacing: 0.32em;
+  /* 字距加在每个字的右边，左边补上同样多才居中 */
+  text-indent: 0.32em;
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.75);
+}
+
+.guide-intro {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: var(--cream-dim);
+  text-shadow: -1px -1px 0 rgba(22, 11, 5, 0.7);
+  text-wrap: balance;
 }
 
 .guide-count {
@@ -1317,6 +1347,20 @@ body {
     padding: 22px 30px 26px;
   }
 
+  .guide-head {
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+  }
+
+  .guide-title {
+    font-size: 36px;
+  }
+
+  .guide-intro {
+    margin-top: 10px;
+    font-size: 15px;
+  }
+
   .guide-count {
     font-size: 15px;
   }
@@ -1368,6 +1412,10 @@ body {
     padding: 14px 18px 18px;
   }
 
+  .guide-title {
+    font-size: 28px;
+  }
+
   .guide-text {
     font-size: 17px;
   }
@@ -1415,6 +1463,20 @@ body {
   .guide-card {
     --u: 30px;
     padding: 10px 20px 14px;
+  }
+
+  .guide-head {
+    margin-bottom: 8px;
+    padding: 0 0 8px;
+  }
+
+  .guide-title {
+    font-size: 22px;
+  }
+
+  .guide-intro {
+    margin-top: 2px;
+    font-size: 13px;
   }
 
   .demo {

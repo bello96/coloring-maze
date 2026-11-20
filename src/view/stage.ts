@@ -55,7 +55,7 @@ export class Stage {
   /** 影子要重画（灯光的范围变了） */
   private shadowsStale = true;
 
-  constructor(canvas: HTMLCanvasElement, font: string) {
+  constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
@@ -114,14 +114,18 @@ export class Stage {
     const tableWood = mill.make({ ...(desk ? DESK : TABLE), size });
     mill.dispose();
     this.woods = { dark: walnut.color, light: birch.color, table: tableWood.color };
+    // 托盘的面板：木纹横过来（和底板的竖纹交错，夹板就是这样一层横一层竖），所有托盘共用这一张
+    const panel = (source: HTMLCanvasElement, srgb: boolean): THREE.CanvasTexture => {
+      const turned = texture(quarterTurn(source), srgb);
+      turned.flipY = false;
+      return turned;
+    };
     this.assets = {
       birch: texture(birch.color, true),
       birchRelief: texture(birch.relief, false),
-      walnut: walnut.color,
-      walnutRelief: walnut.relief,
+      panel: panel(walnut.color, true),
+      panelRelief: panel(walnut.relief, false),
       plyEdge: texture(plyEdge(), true),
-      anisotropy,
-      font,
       sun: this.key.target.position.clone().sub(this.key.position).normalize(),
     };
 
@@ -267,6 +271,18 @@ function tile(source: HTMLCanvasElement): string {
     ctx.drawImage(source, 0, 0, size, size);
   }
   return canvas.toDataURL('image/jpeg', 0.8);
+}
+
+/** 一张正方形的木纹顺时针转四分之一圈 */
+function quarterTurn(source: HTMLCanvasElement): HTMLCanvasElement {
+  const size = source.width;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.translate(size, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(source, 0, 0, size, size);
+  return canvas;
 }
 
 /** 夹板的断面：几层薄木片叠在一起，一层深一层浅 */
