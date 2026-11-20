@@ -325,7 +325,7 @@ export class FakeBrowser {
     for (const fn of this.documentListeners.visibilitychange ?? []) fn({} as never);
   }
 
-  /** 选关树上的那些木片，第 1 关在最前面 */
+  /** 选关树上的那些叶片（一关一个按钮），第 1 关在最前面 */
   knots(): FakeEl[] {
     const list = this.el('tree-board').children.find((kid) => kid.className === 'tree-knots');
     return list ? list.children.map((item) => item.children[0]) : [];

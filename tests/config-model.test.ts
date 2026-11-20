@@ -19,6 +19,19 @@ describe('drafts', () => {
     const drafts = draftsOf(BUILTIN);
     drafts[40] = { ...drafts[40], par: null, solution: null };
     expect(setOf(drafts)).toBeNull();
+    expect(setOf(drafts, true)).toBeNull();
+  });
+
+  it('carry the open-all switch into the set only when it is on', () => {
+    const drafts = draftsOf(BUILTIN);
+    const on = setOf(drafts, true);
+    expect(on).toEqual({ ...BUILTIN, openAll: true });
+    expect(checkLevelSet(JSON.parse(JSON.stringify(on)))).toEqual({ ok: true, set: on });
+    // 关着的时候关卡表里没有这一项，和加这个开关之前发布的一模一样
+    const off = setOf(drafts, false);
+    expect(off).toEqual(BUILTIN);
+    expect(off !== null && 'openAll' in off).toBe(false);
+    expect(JSON.stringify(setOf(drafts))).toBe(JSON.stringify(BUILTIN));
   });
 
   it('forget the fewest steps when the map changes, and get them back when it is changed back', () => {
@@ -140,9 +153,9 @@ describe('changing the size', () => {
 });
 
 describe('how long a side may be', () => {
-  it('is 23 while the other side is at most 17, and 17 once the other side is longer', () => {
-    expect([maxSide(5), maxSide(17), maxSide(18), maxSide(23)]).toEqual([23, 23, 17, 17]);
-    for (let other = 5; other <= 23; other++) {
+  it('is 25 while the other side is at most 20, and 20 once the other side is longer', () => {
+    expect([maxSide(5), maxSide(20), maxSide(21), maxSide(25)]).toEqual([25, 25, 20, 20]);
+    for (let other = 5; other <= 25; other++) {
       expect(sizeOk(other, maxSide(other)), `另一边 ${other}`).toBe(true);
       expect(sizeOk(other, maxSide(other) + 1), `另一边 ${other}`).toBe(false);
     }

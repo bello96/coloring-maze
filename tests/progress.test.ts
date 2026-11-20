@@ -26,8 +26,9 @@ const K = keysOf(BUILTIN);
 const keys = (...ids: string[]): LevelKey[] => ids.map((id) => ({ id, sig: `${id}1` }));
 /** 通过了这几关（每关 9 步） */
 const having = (list: readonly LevelKey[]): Progress => list.reduce((p, key) => record(p, key, 9), emptyProgress());
-/** 玩到第 reached 关的人，一共 count 关的时候每一关是哪一种 */
-const states = (reached: number, count: number): string[] => Array.from({ length: count }, (_, i) => stateOf(reached, count, i));
+/** 玩到第 reached 关的人，一共 count 关的时候每一关是哪一种。openAll 是"开放全部关卡"开没开 */
+const states = (reached: number, count: number, openAll?: boolean): string[] =>
+  Array.from({ length: count }, (_, i) => stateOf(reached, count, i, openAll));
 
 describe('where the save lives', () => {
   it('is under a new name, next to the old one', () => {
@@ -224,6 +225,28 @@ describe('which levels can be played', () => {
     expect(stateOf(2, 2, 2)).toBe('locked');
     expect(stateOf(999, 2, 2)).toBe('locked');
     expect(landing(1, 0)).toBe(-1);
+  });
+
+  it('is every level when all levels are open: the ones not reached yet are free instead of locked', () => {
+    expect(states(0, 3, true)).toEqual(['open', 'free', 'free']);
+    expect(states(1, 3, true)).toEqual(['open', 'free', 'free']);
+    expect(states(3, 5, true)).toEqual(['done', 'done', 'open', 'free', 'free']);
+    // 轮到的、通过了的，和不开放时一样
+    expect(states(4, 3, true)).toEqual(['done', 'done', 'done']);
+    expect(states(3, 5, false)).toEqual(['done', 'done', 'open', 'locked', 'locked']);
+    // 打开网站进哪一关不受它影响：还是轮到的那一关
+    expect(landing(3, 5)).toBe(2);
+  });
+
+  it('still says locked for a position outside the set when all levels are open', () => {
+    expect(stateOf(1, 2, -1, true)).toBe('locked');
+    expect(stateOf(1, 2, 2, true)).toBe('locked');
+  });
+
+  it('jumps ahead to the level after one passed out of turn, as can happen when all levels are open', () => {
+    // 玩到第 3 关的人直接去通了第 40 关：玩到第 41 关，中间跳过去的也算通过了
+    expect(advanced(3, 39)).toBe(41);
+    expect(states(41, 80).slice(0, 42).filter((state) => state === 'done')).toHaveLength(40);
   });
 });
 

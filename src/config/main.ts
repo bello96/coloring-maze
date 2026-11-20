@@ -69,6 +69,8 @@ class Editor {
   private entries: ReadonlyMap<string, LevelEntry>;
   /** 正在改的那一关 */
   private current: string;
+  /** "开放全部关卡"那个开关现在是不是开着。它管的是整份关卡表，和关卡一样发布了才生效 */
+  private openAll: boolean;
   private brush: Brush = 'wall';
   /** 后台线程查每一关现在这张图查到哪了。图一变，旧的就作废 */
   private readonly checks = new Map<string, CheckState>();
@@ -101,6 +103,7 @@ class Editor {
   private readonly note = el('publish-note');
   private readonly addButton = el<HTMLButtonElement>('btn-add');
   private readonly deleteButton = el<HTMLButtonElement>('btn-delete');
+  private readonly openSwitch = el<HTMLButtonElement>('switch-open-all');
 
   /**
    * @param set 要编辑的关卡表：线上现在的那一份；线上还没发布过就是内置的 80 关
@@ -110,6 +113,7 @@ class Editor {
     this.published = set;
     this.entries = new Map(set.levels.map((entry) => [entry.id, entry]));
     this.current = this.drafts[0].id;
+    this.openAll = set.openAll === true;
     this.session = session;
     this.checker = new Checker(spawn, (id, state) => this.checked(id, state));
     this.list = new LevelList({ select: (id) => this.select(id), move: (from, to) => this.move(from, to) });
@@ -152,6 +156,12 @@ class Editor {
     this.deleteButton.addEventListener('click', () => this.remove());
     this.apply.addEventListener('click', () => this.takeAdvice());
     this.publishButton.addEventListener('click', () => void this.publish());
+    this.openSwitch.addEventListener('click', () => {
+      this.batch(() => {
+        this.openAll = !this.openAll;
+        this.said = null;
+      });
+    });
 
     window.addEventListener('resize', () => {
       this.grid.resized();
@@ -174,6 +184,7 @@ class Editor {
     return {
       current: this.current,
       dirty: this.dirty(),
+      openAll: this.openAll,
       levels: this.drafts.map((draft) => ({ ...draft, standing: this.reportFor(draft).standing })),
     };
   }
@@ -367,8 +378,9 @@ class Editor {
 
   // ───── 发布 ─────
 
-  /** 有没有还没发布的修改：关卡的增删、顺序、图、染料，和上次发布的那一份有任何不同 */
+  /** 有没有还没发布的修改：关卡的增删、顺序、图、染料，还有"开放全部关卡"那个开关，和上次发布的那一份有任何不同 */
   private dirty(): boolean {
+    if (this.openAll !== (this.published.openAll === true)) return true;
     const was = this.published.levels;
     if (was.length !== this.drafts.length) return true;
     return this.drafts.some((draft, i) => draft.id !== was[i].id || draft.dye !== was[i].dye || draft.rows.join('/') !== was[i].rows.join('/'));
@@ -376,7 +388,7 @@ class Editor {
 
   private async publish(): Promise<void> {
     // 有一关还没算出最少步数（在算，或者被拦下了）就拼不成关卡表
-    const set = setOf(this.drafts);
+    const set = setOf(this.drafts, this.openAll);
     if (!set || this.sending) return;
     this.sending = true;
     this.render();
@@ -429,6 +441,7 @@ class Editor {
     );
     this.addButton.disabled = this.drafts.length >= LIMITS.maxLevels;
     this.deleteButton.disabled = this.drafts.length <= 1;
+    if (this.openSwitch.getAttribute('aria-checked') !== String(this.openAll)) this.openSwitch.setAttribute('aria-checked', String(this.openAll));
 
     this.grid.show(draft.rows, draft.dye, {
       faults: this.earlyOf(draft.rows)?.cells ?? [],

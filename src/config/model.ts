@@ -18,14 +18,17 @@ export function draftsOf(set: LevelSet): Draft[] {
   return set.levels.map(({ id, rows, dye, par, solution }) => ({ id, rows, dye, par, solution }));
 }
 
-/** 把草稿拼回关卡表。只要有一关还没算出最少步数就拼不成，返回 null */
-export function setOf(drafts: readonly Draft[]): LevelSet | null {
+/**
+ * 把草稿拼回关卡表。只要有一关还没算出最少步数就拼不成，返回 null。
+ * @param openAll "开放全部关卡"那个开关是不是开着。关着的时候关卡表里不带这一项（见 LevelSet）
+ */
+export function setOf(drafts: readonly Draft[], openAll = false): LevelSet | null {
   const levels: LevelEntry[] = [];
   for (const { id, rows, dye, par, solution } of drafts) {
     if (par === null || solution === null) return null;
     levels.push({ id, rows, dye, par, solution });
   }
-  return { version: 1, levels };
+  return openAll ? { version: 1, levels, openAll: true } : { version: 1, levels };
 }
 
 /**
@@ -115,7 +118,7 @@ export function resize(rows: readonly string[], toRows: number, toCols: number):
   return out;
 }
 
-/** 另一边是 other 格的时候，这一边最多能有几格：长边最多 23，短边最多 17 */
+/** 另一边是 other 格的时候，这一边最多能有几格：长边最多 25，短边最多 20 */
 export function maxSide(other: number): number {
   return other > LIMITS.maxShort ? LIMITS.maxShort : LIMITS.maxLong;
 }

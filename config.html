@@ -33,6 +33,11 @@
             <a class="chip" id="link-game" href="/">返回游戏</a>
           </div>
           <p id="publish-note" aria-live="polite"></p>
+          <!-- 管整份关卡表的开关，和关卡一样点「发布」后生效：开着的时候玩家每一关都能直接进，不用先通过前一关 -->
+          <div class="option">
+            <span id="open-all-name">开放全部关卡</span>
+            <button class="switch" id="switch-open-all" type="button" role="switch" aria-checked="false" aria-labelledby="open-all-name"></button>
+          </div>
         </section>
 
         <section class="panel-part">

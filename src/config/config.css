@@ -390,6 +390,59 @@ input {
   color: var(--fail-text);
 }
 
+/* 管整份关卡表的开关那一行：左边是名字，右边是开关 */
+.option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 34px;
+  margin-top: 12px;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+/* 开关：木板上铣出的一道短槽，里面一颗桦木的圆钮。关着时钮在左边，槽是深色的；
+   开着时钮滑到右边，槽里染上叶绿（和"检查"里"过了"的那一格是同一种染料） */
+.switch {
+  position: relative;
+  flex: none;
+  width: 50px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(20, 10, 5, 0.34);
+  box-shadow:
+    inset 0 2px 3px rgba(0, 0, 0, 0.45),
+    0 1px 0 rgba(255, 232, 196, 0.14);
+  cursor: pointer;
+  transition: background-color 0.14s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--birch) var(--grain-birch) center / 512px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(90, 55, 20, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: transform 0.14s;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--pass) var(--grain-birch) center / 512px;
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(22px);
+}
+
 #level-title {
   margin: 0 0 14px;
   font-size: 22px;
@@ -785,7 +838,9 @@ input {
     animation: none;
   }
 
-  .chip {
+  .chip,
+  .switch,
+  .switch::after {
     transition: none;
   }
 }

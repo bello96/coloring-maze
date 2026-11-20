@@ -141,6 +141,8 @@ export function mergeProgress(mine: Progress, theirs: Progress, keys: readonly L
 // 哪些关能玩、打开网站进哪一关，只看一个数："玩到第几关"（从 1 数起）。它前面的关都算通过了，它自己是轮到的那一关，
 // 后面的还没轮到；通过了最后一关，它就比关数多一。这个数单独存一项，就是光秃秃的一个数字，
 // 在浏览器的开发者工具里把它改成 40，再打开就是第 40 关。上面那些按关记的成绩只管选关树上的星星和最好步数，不管解锁。
+// 配置页上的"开放全部关卡"开着的时候，后面还没轮到的关也都能进（见 stateOf 的 openAll）；这个数照样记、照样往前走，
+// 打开网站进的还是它指的那一关。
 
 /** "玩到第几关"存在这里 */
 export const LEVEL_KEY = 'coloring-maze.level';
@@ -161,22 +163,27 @@ export function reachedFrom(p: Progress, keys: readonly LevelKey[]): number {
   return Object.keys(p.done).length > 0 ? 1 : 0;
 }
 
-/** 玩到第 reached 关的人通过了第 i 关（从 0 数起）之后玩到第几关：通过的是轮到的那一关就往前走一关，重玩前面的不变 */
+/**
+ * 玩到第 reached 关的人通过了第 i 关（从 0 数起）之后玩到第几关：通过的是轮到的那一关就往前走一关，重玩前面的不变。
+ * 全部关卡开放着的时候可以跳到后面去玩：通过了后面的一关，就玩到那一关的下一关（中间跳过去的也算通过了）。
+ */
 export function advanced(reached: number, i: number): number {
   return Math.max(reached, i + 2);
 }
 
-/** 树上一关的样子：通过了；轮到了（能玩但还没通过）；没轮到 */
-export type NodeState = 'done' | 'open' | 'locked';
+/** 树上一关的样子：通过了；轮到了（能玩但还没通过）；没轮到、但全部关卡开放着所以也能玩；没轮到、进不去 */
+export type NodeState = 'done' | 'open' | 'free' | 'locked';
 
 /**
  * 一共 count 关、玩到第 reached 关（0 是没玩过，和 1 一样）的时候，第 i 关（从 0 数起）是哪一种：
- * 排在它前面的都是通过了的，它自己是轮到的，后面的没轮到。
+ * 排在它前面的都是通过了的，它自己是轮到的，后面的没轮到——进不去；"开放全部关卡"开着（openAll）就也能进。
  */
-export function stateOf(reached: number, count: number, i: number): NodeState {
+export function stateOf(reached: number, count: number, i: number, openAll = false): NodeState {
   if (i < 0 || i >= count) return 'locked';
   const turn = Math.max(reached, 1) - 1;
-  return i < turn ? 'done' : i === turn ? 'open' : 'locked';
+  if (i < turn) return 'done';
+  if (i === turn) return 'open';
+  return openAll ? 'free' : 'locked';
 }
 
 /**

@@ -5,7 +5,7 @@ import { Drops } from './drops.ts';
 import { Marble } from './marble.ts';
 import { rollProfile, settle } from './motion.ts';
 import { Governor, isModestGpu, sharpnessFor } from './sharpness.ts';
-import { SQUARE, Stage, type Extent, type Insets } from './stage.ts';
+import { SQUARE, Stage, type Extent, type Insets, type WoodUrls } from './stage.ts';
 import { Tray } from './tray.ts';
 import { Waits } from './waits.ts';
 
@@ -268,8 +268,8 @@ export class GameView {
     if (!on && this.board) this.wake();
   }
 
-  /** 界面要用的木纹图片：木片、木牌的两种，选关树那块长木板的，和桌面的 */
-  woodUrls(): { dark: string; light: string; plank: string; table: string } {
+  /** 界面要用的木纹图片：木片、木牌的两种，选关树那块长木板的、那棵树的树干的，和桌面的 */
+  woodUrls(): WoodUrls {
     return this.stage.woodUrls();
   }
 

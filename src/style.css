@@ -22,6 +22,7 @@
   --wood-dark: none;
   --wood-light: none;
   --wood-plank: none;
+  --wood-trunk: none;
   --wood-table: none;
   --font: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
   --pad-top: env(safe-area-inset-top, 0px);
@@ -892,8 +893,9 @@ body {
 }
 
 /* ───── 选关树 ─────
-   关里点「选关」看到的那一屏：桌上一块很长的胡桃木板，上面刻着一棵树，一关一个圆木片。
-   整块板子上下滚动（浏览器自带的滚动）；木板多宽、多长，木片放在哪，由程序算好（见 ui/tree.ts）。 */
+   关里点「选关」看到的那一屏：桌上一块很长的胡桃木板，上面立着一棵大树——粗树干、树根、左右伸出去的枝杈，
+   一关是枝头的一片叶子，序号刻在叶片上。
+   整块板子上下滚动（浏览器自带的滚动）；木板多宽、多长，树干、枝杈、叶片在哪，由程序算好（见 ui/tree.ts）。 */
 
 .tree {
   position: fixed;
@@ -926,7 +928,9 @@ body {
 .tree-board {
   position: relative;
   margin: 0 auto;
-  --r: 34px;
+  /* 写着序号的叶片有多大：从叶柄到叶尖的长、最宽处的一半。由程序按木板的宽度定（见 ui/tree.ts） */
+  --ll: 92px;
+  --lh: 30px;
   background: var(--walnut) var(--wood-plank) center top / 100% auto repeat-y;
   box-shadow:
     inset 1px 0 0 rgba(255, 232, 196, 0.2),
@@ -934,43 +938,55 @@ body {
     inset 0 0 70px rgba(0, 0, 0, 0.28);
 }
 
-/* 刻出来的树：深色的是凹槽，底下垫的那份浅色、往右下错开一个像素，是凹槽对面受光的那道边 */
-.tree-art {
+/* 树从下到上叠三层，都和木板一样大：
+   一、刻在木板上的小叶子，和整棵树落在木板上的影子（一张 SVG）；
+   二、树的木头：一整块浅一些的木头，按树干、树根、枝杈的轮廓裁出来；
+   三、木头上的明暗和树皮的沟（又一张 SVG）。 */
+.tree-art,
+.tree-wood {
   position: absolute;
   left: 0;
   top: 0;
-  display: block;
   pointer-events: none;
 }
 
+.tree-art {
+  display: block;
+}
+
+/* 木头比木板浅、比叶片深：桦木的木纹上了一层茶色。木纹是上下对接得上的那一张，树干再长也看不出接缝。
+   它是靠"按一条路径裁出形状"显示成一棵树的；不认这种裁法的老浏览器里它不显示（不然就是盖住整块木板的一个方块），
+   树由垫在底下的那层纯色（.plain）顶着 */
+.tree-wood {
+  display: none;
+  width: 100%;
+  height: 100%;
+  background: #ab8f76 var(--wood-trunk) center top / 340px auto;
+  background-blend-mode: multiply;
+}
+
+@supports (clip-path: path('M0 0H1V1Z')) {
+  .tree-wood {
+    display: block;
+  }
+}
+
+.tree-art .plain {
+  fill: #8f6c48;
+}
+
+/* 刻出来的小叶子：深色的是凹槽，底下垫的那份浅色、往右下错开一个像素，是凹槽对面受光的那道边 */
 .tree-art .lit {
   opacity: 0.2;
   fill: #ffe2b8;
-  stroke: #ffe2b8;
 }
 
 .tree-art .cut {
   opacity: 0.6;
   fill: #140a05;
-  stroke: #140a05;
 }
 
-.tree-art .solid {
-  stroke: none;
-}
-
-.tree-art .line {
-  fill: none;
-  stroke-width: 6.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.tree-art .line.root {
-  stroke-width: 8;
-}
-
-/* 通过的关，叶子填上那一关的染料（调亮一些，在深色的木头上才看得清） */
+/* 通过的关，小叶子填上那一关的染料（调亮一些，在深色的木头上才看得清） */
 .tree-art .dyed path {
   fill: var(--leaf);
   fill: color-mix(in srgb, var(--leaf) 78%, #fff);
@@ -985,28 +1001,85 @@ body {
   stroke-linecap: round;
 }
 
+/* 树比木板高出一截：右下方落着它的影子，左上方的边受着光 */
+.tree-art .cast {
+  opacity: 0.44;
+  fill: #070301;
+}
+
+.tree-art .rim {
+  opacity: 0.36;
+  fill: #ffe6c0;
+}
+
+/* 树干是圆的：背光的半边暗下去（两层叠出由浅到深），受光的那一侧有一道亮带 */
+.tree-art .shade {
+  opacity: 0.17;
+  fill: #1c0d05;
+}
+
+.tree-art .glow {
+  opacity: 0.12;
+  fill: #fff0d2;
+}
+
+.tree-art .bark,
+.tree-art .bark-lit,
+.tree-art .limb-dark,
+.tree-art .limb-light {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 树皮上的沟：一道深色的线，旁边一道受光的浅边 */
+.tree-art .bark {
+  stroke: rgba(30, 14, 5, 0.5);
+  stroke-width: 1.7;
+}
+
+.tree-art .bark-lit {
+  stroke: rgba(255, 234, 200, 0.2);
+  stroke-width: 1.3;
+}
+
+.tree-art .limb-dark {
+  stroke: rgba(24, 11, 4, 0.4);
+  stroke-width: 2.2;
+}
+
+.tree-art .limb-light {
+  stroke: rgba(255, 238, 206, 0.36);
+  stroke-width: 1.5;
+}
+
 .tree-knots {
+  position: absolute;
+  left: 0;
+  top: 0;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* 每一项只是一个定位用的点：木片的正中 */
+/* 每一项只是一个定位用的点：叶片的正中 */
 .tree-knots li {
   position: absolute;
   width: 0;
   height: 0;
 }
 
-/* 一关：嵌在枝头的一块圆木片，和通关面板上的星星一样，是浅色的桦木 */
+/* 一关：枝头的一片叶子，一片薄薄的桦木，和通关面板上的星星是同一种木头。
+   按钮本身是罩住叶片的一个方框（好点中），叶片、它的影子、序号都摆在这个框的正中 */
 .knot {
   position: absolute;
-  left: calc(var(--r) * -1);
-  top: calc(var(--r) * -1);
-  width: calc(var(--r) * 2);
-  height: calc(var(--r) * 2);
+  left: calc(var(--ll) / -2 - 6px);
+  top: calc(var(--lh) * -1 - 13px);
+  width: calc(var(--ll) + 12px);
+  height: calc(var(--lh) * 2 + 26px);
   padding: 0;
   border: 0;
+  border-radius: 14px;
   background: none;
   font: 700 23px/1 var(--font);
   font-variant-numeric: lining-nums;
@@ -1014,55 +1087,102 @@ body {
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  /* 里面几层的前后只在这片叶子内部排，不和别的叶子搅在一起 */
+  isolation: isolate;
 }
 
-.knot-disc {
+/* 叶片、叶片的影子、"轮到了"的那圈亮边，是同一个形状：叶柄在左、叶尖在右地画好，
+   再绕着写序号的那一点转过去（--turn）；长在树干左边的先左右翻过来（--flip） */
+.knot-shade,
+.knot-leaf,
+.knot.open::before {
+  position: absolute;
+  left: calc(50% - var(--ll) * 0.48);
+  top: calc(50% - var(--lh));
+  width: var(--ll);
+  height: calc(var(--lh) * 2);
+  transform-origin: 48% 50%;
+  transform: rotate(var(--turn, 0deg)) scaleX(var(--flip, 1));
+  /* 浏览器不认这种裁法的话，至少是个椭圆 */
+  border-radius: 50%;
+  clip-path: var(--leaf-clip);
+}
+
+/* 叶片薄，影子贴得近、边是实的 */
+.knot-shade {
+  z-index: -2;
+  transform: translate(2px, 3.5px) rotate(var(--turn, 0deg)) scaleX(var(--flip, 1));
+  background: rgba(8, 4, 2, 0.5);
+}
+
+/* 叶片上从上到下两层：刻的叶脉和厚度（所有叶片共用的一张图），桦木的木纹 */
+.knot-leaf {
+  background-color: var(--birch);
+  background-image: var(--leaf-veins), var(--wood-light);
+  background-position: center, center;
+  background-size:
+    100% 100%,
+    300px;
+  background-repeat: no-repeat, repeat;
+}
+
+.knot-num {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: var(--birch) var(--wood-light) center / 300px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    inset 0 -1px 0 rgba(90, 55, 20, 0.35),
-    0 2px 0 rgba(20, 10, 5, 0.55),
-    2px 4px 6px rgba(0, 0, 0, 0.4);
+  /* 序号是烙上去的深色 */
+  text-shadow: 0 1px 0 rgba(255, 246, 226, 0.42);
+  pointer-events: none;
 }
 
-.knot:active:not(:disabled) .knot-disc {
-  transform: translateY(1px);
+.knot:active:not(:disabled) .knot-leaf,
+.knot:active:not(:disabled) .knot-num {
+  translate: 0 1px;
 }
 
 .knot:focus-visible {
-  outline: none;
-}
-
-.knot:focus-visible .knot-disc {
   outline: 2px solid var(--cream);
-  outline-offset: 4px;
+  outline-offset: 1px;
 }
 
 /* 还没按过键的时候不画键盘焦点的那一圈：它看着像"轮到了"（见 ui/tree.ts） */
-.tree.unkeyed .knot:focus-visible .knot-disc {
+.tree.unkeyed .knot:focus-visible {
   outline: none;
 }
 
-/* 轮到的这一关：外面一圈亮边，周围一团光慢慢地一明一暗。
-   光是单独的一层，只变透明度——这样浏览器不用每一帧重画，开着这一屏不费电 */
-.knot.open .knot-disc {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 0 0 3px var(--cream),
-    2px 4px 6px rgba(0, 0, 0, 0.4);
+/* 通过的关：叶片染上这一关的染料（染料渗进木头里，木纹还看得见） */
+.knot.done .knot-leaf {
+  background-color: var(--tint, var(--birch));
+  background-blend-mode: normal, multiply;
 }
 
-.knot.open .knot-disc::after {
+/* 深色的染料上，序号换成填了米白色漆的字 */
+.knot[data-ink='light'] .knot-num {
+  color: #f6ead2;
+  text-shadow: 0 -1px 0 rgba(22, 11, 5, 0.6);
+}
+
+/* 轮到的这一关：叶片外面一圈亮边，周围一团光慢慢地一明一暗。
+   光是单独的一层，只变透明度——这样浏览器不用每一帧重画，开着这一屏不费电 */
+.knot.open::before {
+  content: '';
+  z-index: -1;
+  transform: rotate(var(--turn, 0deg)) scaleX(var(--flip, 1)) scale(1.1, 1.16);
+  background: var(--cream);
+}
+
+.knot.open::after {
   content: '';
   position: absolute;
-  inset: -3px;
+  left: calc(50% - var(--ll) * 0.42);
+  top: calc(50% - var(--lh) * 0.8);
+  width: calc(var(--ll) * 0.84);
+  height: calc(var(--lh) * 1.6);
+  z-index: -3;
   border-radius: 50%;
-  box-shadow: 0 0 24px 8px rgba(236, 220, 188, 0.46);
+  transform: rotate(var(--turn, 0deg));
+  box-shadow: 0 0 26px 12px rgba(236, 220, 188, 0.5);
   animation: knot-turn 2.6s ease-in-out infinite;
 }
 
@@ -1072,25 +1192,29 @@ body {
   }
 }
 
-/* 没轮到的：一块没打磨过的暗木片，只有序号 */
+/* 没轮到的：一片没打磨过的暗叶子，只有序号 */
 .knot.locked {
   cursor: default;
 }
 
-.knot.locked .knot-disc {
-  color: rgba(44, 26, 14, 0.62);
+.knot.locked .knot-leaf {
   background-color: #7d6546;
-  background-blend-mode: multiply;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 2px 0 rgba(20, 10, 5, 0.5),
-    1px 3px 5px rgba(0, 0, 0, 0.35);
+  background-blend-mode: normal, multiply;
 }
 
-/* 通过的关：木片下面刻着星星和最好步数 */
+.knot.locked .knot-num {
+  color: rgba(44, 26, 14, 0.62);
+  text-shadow: none;
+}
+
+.knot.locked .knot-shade {
+  background: rgba(8, 4, 2, 0.38);
+}
+
+/* 通过的关：叶片下面刻着星星和最好步数 */
 .knot-note {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(50% + var(--lh) + 8px);
   left: 50%;
   display: flex;
   flex-direction: column;
@@ -1137,6 +1261,13 @@ body {
       inset 0 0 70px rgba(0, 0, 0, 0.28),
       0 5px 0 var(--walnut-edge),
       14px 16px 46px rgba(0, 0, 0, 0.65);
+  }
+}
+
+/* 木板窄（手机）的时候叶片小一号，序号也小一点 */
+@media (max-width: 479px) {
+  .knot {
+    font-size: 21px;
   }
 }
 
@@ -1318,7 +1449,7 @@ body {
   .guide-card,
   .demo *,
   .tree,
-  .knot.open .knot-disc::after,
+  .knot.open::after,
   .result .stars svg.won {
     animation: none;
   }

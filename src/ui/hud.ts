@@ -1,5 +1,5 @@
 import { starsFor } from '../game/stars.ts';
-import type { Insets } from '../view/stage.ts';
+import type { Insets, WoodUrls } from '../view/stage.ts';
 import { starRow } from './star-row.ts';
 
 export interface HudHandlers {
@@ -47,13 +47,14 @@ export class Hud {
     this.next.addEventListener('click', handlers.next);
   }
 
-  /** 木纹画好了：界面上的木片、木牌、选关树的那块长木板和它底下的桌面从此拿它当底纹 */
-  setWood(wood: { readonly dark: string; readonly light: string; readonly plank: string; readonly table: string }): void {
+  /** 木纹画好了：界面上的木片、木牌、选关树的那块长木板、那棵树和木板底下的桌面从此拿它当底纹 */
+  setWood(wood: WoodUrls): void {
     const root = document.documentElement.style;
     root.setProperty('--wood-table', `url(${wood.table})`);
     root.setProperty('--wood-dark', `url(${wood.dark})`);
     root.setProperty('--wood-light', `url(${wood.light})`);
     root.setProperty('--wood-plank', `url(${wood.plank})`);
+    root.setProperty('--wood-trunk', `url(${wood.trunk})`);
   }
 
   /** 进了一关：步数和那排按钮亮出来。回到选关树：全收起来，通关面板也一起收 */

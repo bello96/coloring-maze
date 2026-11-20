@@ -55,6 +55,16 @@ describe('loading the level set when the game starts', () => {
     expect(warned).not.toHaveBeenCalled();
   });
 
+  it('takes the open-all switch along with the levels, from the server and from the copy it kept', async () => {
+    const open: LevelSet = { ...ONLINE, openAll: true };
+    const storage = new Shelf();
+    expect(await loadLevelSet({ fetch: online(open), storage })).toEqual({ set: open, source: 'remote' });
+    // 下一次线上拿不到：留的那份里开关也还开着
+    expect(await loadLevelSet({ fetch: answer(404, ''), storage })).toEqual({ set: open, source: 'cache' });
+    // 内置的关卡表里它是关着的
+    expect(BUILTIN.openAll).toBeUndefined();
+  });
+
   const failures: ReadonlyArray<readonly [name: string, fetch: Fetch]> = [
     ['the request fails', async () => Promise.reject(new TypeError('Failed to fetch'))],
     ['nothing has been published yet (404)', answer(404, '{"error":"not_found"}')],

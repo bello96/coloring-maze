@@ -59,6 +59,8 @@ export class App {
   private levels: readonly LevelEntry[] = BUILTIN.levels;
   /** 每一关在存档里的编号和指纹，顺序和 levels 一样 */
   private keys: readonly LevelKey[] = keysOf(BUILTIN);
+  /** 关卡表里"开放全部关卡"是不是开着：开着的时候还没轮到的关也能进（选关树上点得动，地址也进得去） */
+  private openAll = false;
   /** 现在在第几关（在选关树上时是刚才那一关），从 0 数起；地址栏里写的就是它。还没 start 是 -1 */
   private index = -1;
   /** 现在这一关，按摆在屏幕上的朝向（长方形的关卡可能是翻过来摆的，见 facing） */
@@ -134,12 +136,14 @@ export class App {
   /**
    * 木纹、字体、关卡表都备好之后调用：直接摆上该进的那一关。地址栏里写着第几关（/12）、玩家又玩到了那里，就是那一关；
    * 别的情况——网站的根地址、还没轮到的关、不是一关的地址——都是轮到的那一关，地址栏跟着改过来。
-   * 第一次来的人进第 1 关，上面盖着新手指引。
+   * 关卡表里"开放全部关卡"开着的话，地址栏里写的关只要有就进得去，不管轮没轮到。
+   * 第一次来的人进第 1 关（开放全部关卡时是地址栏里写的那一关），上面盖着新手指引。
    * @param set 这次用哪份关卡表
    */
   start(set: LevelSet): void {
     this.levels = set.levels;
     this.keys = keysOf(set);
+    this.openAll = set.openAll === true;
     this.hud.setWood(this.view.woodUrls());
     this.sync();
     if (this.reached === 0) {
@@ -174,10 +178,14 @@ export class App {
     }
   }
 
-  /** 想进第 number 关（从 1 数起；0 是没说哪一关）的话实际进哪一关（从 0 数起）：没有这一关、还没轮到，都改进轮到的那一关 */
+  /**
+   * 想进第 number 关（从 1 数起；0 是没说哪一关）的话实际进哪一关（从 0 数起）：没有这一关、还没轮到，都改进轮到的那一关。
+   * "开放全部关卡"开着的时候没有"还没轮到"这回事，有这一关就进。
+   */
   private allowed(number: number): number {
     const top = landing(this.reached, this.levels.length);
-    return number >= 1 && number - 1 <= top ? number - 1 : top;
+    const last = this.openAll ? this.levels.length - 1 : top;
+    return number >= 1 && number - 1 <= last ? number - 1 : top;
   }
 
   /**
@@ -229,8 +237,8 @@ export class App {
   /** 树上每一关现在的样子 */
   private nodes(): TreeNode[] {
     return this.levels.map((entry, i) => {
-      const state = stateOf(this.reached, this.levels.length, i);
-      // 没轮到的关不写成绩，哪怕以前打过（那个数被人往回改了）
+      const state = stateOf(this.reached, this.levels.length, i, this.openAll);
+      // 进不去的关不写成绩，哪怕以前打过（那个数被人往回改了）
       const best = state === 'locked' ? 0 : bestOf(this.progress, this.keys[i]);
       return { state, dye: entry.dye, best, stars: best > 0 ? starsFor(best, entry.par) : 0 };
     });
@@ -240,7 +248,7 @@ export class App {
   private pick(index: number): void {
     if (this.phase !== 'tree') return;
     this.sync();
-    if (stateOf(this.reached, this.levels.length, index) === 'locked') return;
+    if (stateOf(this.reached, this.levels.length, index, this.openAll) === 'locked') return;
     this.show(index, true);
   }
 
@@ -378,7 +386,10 @@ export class App {
     this.pumping = false;
   }
 
-  /** 所有格子都染上了：不再接受操作，记下成绩；通过的是轮到的那一关的话，"玩到第几关"往前走一关 */
+  /**
+   * 所有格子都染上了：不再接受操作，记下成绩；通过的是轮到的那一关的话，"玩到第几关"往前走一关
+   * （全部关卡开放着、通过的是后面的某一关的话，就到那一关的下一关，见 progress.ts 的 advanced）
+   */
   private win(game: Game): Win {
     const used = steps(game);
     const key = this.keys[this.index];

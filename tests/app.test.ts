@@ -119,11 +119,13 @@ async function skipGuide(browser: FakeBrowser): Promise<void> {
   for (let i = 0; i < 6 && !browser.el('guide').hidden; i++) await browser.click('btn-guide-next');
 }
 
-/** 树上第 n 关（从 1 数起）的木片 */
+/** 树上第 n 关（从 1 数起）的叶片 */
 const knot = (browser: FakeBrowser, n: number): FakeEl => browser.knots()[n - 1];
-/** 木片是哪一种：done（通过了）、open（轮到了）、locked（没轮到） */
+/** 叶片是哪一种：done（通过了）、open（轮到了）、free（没轮到，但全部关卡开放着）、locked（没轮到） */
 const kind = (el: FakeEl): string => el.className.replace('knot', '').trim();
-/** 木片旁边刻的字：几颗星、多少步；没刻就是 null */
+/** 叶片上刻的序号 */
+const numberOn = (el: FakeEl): string => el.children.find((kid) => kid.className === 'knot-num')!.textContent;
+/** 叶片下面刻的字：几颗星、多少步；没刻就是 null */
 function noteOf(el: FakeEl): { stars: number; text: string } | null {
   const note = el.children.find((kid) => kid.className === 'knot-note');
   if (!note) return null;
@@ -393,7 +395,7 @@ describe('the tree of levels, behind the "levels" button', () => {
     expect(browser.el('tools').hidden).toBe(true);
   });
 
-  it('has a disc for every level, and a new player can press only the first', async () => {
+  it('has a leaf for every level, and a new player can press only the first', async () => {
     const { browser } = await boot({ enter: null });
     const knots = browser.knots();
     expect(knots).toHaveLength(80);
@@ -401,8 +403,44 @@ describe('the tree of levels, behind the "levels" button', () => {
     expect(kind(knots[0])).toBe('open');
     expect(knots[0].disabled).toBe(false);
     expect(knots.slice(1).every((el) => kind(el) === 'locked' && el.disabled)).toBe(true);
-    expect(knots[0].children[0].textContent).toBe('1');
-    expect(knots[79].children[0].textContent).toBe('80');
+    expect(numberOn(knots[0])).toBe('1');
+    expect(numberOn(knots[79])).toBe('80');
+  });
+
+  it('grows the leaves on alternating sides of the trunk, tips up, each with its shadow under it', async () => {
+    const { browser } = await boot({ enter: null });
+    const knots = browser.knots();
+    knots.slice(0, 6).forEach((el, i) => {
+      // 叶片本来是叶尖朝右画的：单数关长在左边，先左右翻过来；转的方向也跟着反过来
+      expect(el.style.props['--flip'], `第 ${i + 1} 关`).toBe(i % 2 === 0 ? '-1' : undefined);
+      const turn = parseFloat(el.style.props['--turn']);
+      expect(el.style.props['--turn'], `第 ${i + 1} 关`).toMatch(/^-?[0-9.]+deg$/);
+      expect(Math.sign(turn), `第 ${i + 1} 关`).toBe(i % 2 === 0 ? 1 : -1);
+      expect(Math.abs(turn), `第 ${i + 1} 关`).toBeGreaterThan(12);
+      expect(Math.abs(turn), `第 ${i + 1} 关`).toBeLessThan(27);
+      expect(el.children.slice(0, 3).map((kid) => kid.className), `第 ${i + 1} 关`).toEqual(['knot-shade', 'knot-leaf', 'knot-num']);
+    });
+    // 木板上记着叶片多大、什么形状
+    const board = browser.el('tree-board');
+    expect(board.style.props['--ll']).toBe('80px');
+    expect(board.style.props['--lh']).toBe('26px');
+    expect(board.style.props['--leaf-clip'].startsWith("path('M0 26C")).toBe(true);
+    expect(board.style.props['--leaf-clip'].endsWith("Z')")).toBe(true);
+    expect(board.style.props['--leaf-veins'].startsWith('url("data:image/svg+xml,%3Csvg')).toBe(true);
+  });
+
+  it('dyes the leaf of a level that was passed, and letters it pale or dark to suit the dye', async () => {
+    // 第 1 关的染料是靛蓝（深），第 4 关是藤黄（浅）
+    const { browser } = await boot({ bests: [3, 5, 6, 7], enter: null });
+    expect(knot(browser, 1).style.props['--tint']).toBe('#516bc6');
+    expect(knot(browser, 1).getAttribute('data-ink')).toBe('light');
+    expect(knot(browser, 4).style.props['--tint']).toBe('#e4a540');
+    expect(knot(browser, 4).getAttribute('data-ink')).toBe('dark');
+    // 轮到的、没轮到的不染
+    for (const n of [5, 6]) {
+      expect(knot(browser, n).style.props['--tint'], `第 ${n} 关`).toBeUndefined();
+      expect(knot(browser, n).getAttribute('data-ink'), `第 ${n} 关`).toBeNull();
+    }
   });
 
   it('lets someone who passed two levels press those two and the one after', async () => {
@@ -436,7 +474,7 @@ describe('the tree of levels, behind the "levels" button', () => {
     const { browser } = await boot({ bests: new Array<number>(30).fill(99), enter: null });
     expect(browser.el('tree').scrollTop).toBe(scrolledTo(31));
     expect(browser.el('tree').scrollTop).toBeGreaterThan(1000);
-    // 焦点放在那块木片上：这样方向键、翻页键才滚得动这棵树，回车就能进去
+    // 焦点放在那片叶片上：这样方向键、翻页键才滚得动这棵树，回车就能进去
     expect(browser.document.activeElement).toBe(knot(browser, 31));
     // 但还没按过键的时候不给它画键盘焦点的那一圈——会被看成"轮到了"。按过任何一个键之后才画
     expect(browser.el('tree').className).toContain('unkeyed');
@@ -449,7 +487,7 @@ describe('the tree of levels, behind the "levels" button', () => {
     expect(browser.el('tree').scrollTop).toBe(0);
   });
 
-  it('goes into a level when its disc is pressed', async () => {
+  it('goes into a level when its leaf is pressed', async () => {
     const { app, browser } = await boot({ enter: null });
     await browser.click(knot(browser, 1));
     expect(browser.el('tree').hidden).toBe(true);
@@ -1066,6 +1104,108 @@ describe('the address of the page', () => {
   });
 });
 
+describe('with all levels open', () => {
+  /** 内置的 80 关，配置页上的"开放全部关卡"开着 */
+  const OPEN: LevelSet = { ...BUILTIN, openAll: true };
+
+  it('lets a new player press every leaf on the tree', async () => {
+    const { browser } = await boot({ set: OPEN, enter: null });
+    const knots = browser.knots();
+    expect(knots).toHaveLength(80);
+    expect(kind(knots[0])).toBe('open');
+    expect(knots.slice(1).every((el) => kind(el) === 'free')).toBe(true);
+    expect(knots.every((el) => !el.disabled)).toBe(true);
+  });
+
+  it('keeps the levels not reached locked while the switch is off', async () => {
+    const { browser } = await boot({ set: { version: 1, levels: BUILTIN.levels }, reached: 3, enter: null });
+    expect(browser.knots().slice(0, 5).map(kind)).toEqual(['done', 'done', 'open', 'locked', 'locked']);
+    expect(browser.knots().filter((el) => !el.disabled)).toHaveLength(3);
+  });
+
+  it('goes into a level far ahead when its leaf is pressed, and moves the player on to the level after it once it is passed', async () => {
+    const { app, browser } = await boot({ set: OPEN, reached: 3 });
+    await enter(browser, 12);
+    expect(app.snapshot()).toMatchObject({ level: 12, id: 'b12', steps: 0, phase: 'playing' });
+    expect(browser.path).toBe('/12');
+    await play(browser, app.snapshot().solution);
+    await browser.seconds(2);
+    expect(app.snapshot().phase).toBe('done');
+    // 玩到第 13 关了：中间跳过去的那些也算通过，只是没有星星
+    expect(browser.storage.get(LEVEL)).toBe('13');
+    await browser.click('btn-result-levels');
+    const kinds = browser.knots().map(kind);
+    expect(kinds.slice(0, 12).every((one) => one === 'done')).toBe(true);
+    expect(kinds.slice(12, 15)).toEqual(['open', 'free', 'free']);
+    expect(noteOf(knot(browser, 12))).toEqual({ stars: 3, text: `${LEVELS[11].par} 步` });
+    expect(noteOf(knot(browser, 5))).toBeNull();
+  });
+
+  it('goes on to the next level from the result of a level played out of turn', async () => {
+    const { app, browser } = await boot({ set: OPEN, reached: 2 });
+    await enter(browser, 6);
+    await play(browser, app.snapshot().solution);
+    await browser.seconds(2);
+    await browser.click('btn-next');
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 7, id: 'b07', phase: 'playing' });
+    expect(browser.entries).toEqual(['/2', '/6', '/7']);
+  });
+
+  it.each(['/40', '/80'])('opens the level in the address %s although the player has not got that far', async (path) => {
+    const { app, browser } = await boot({ set: OPEN, reached: 12, path });
+    expect(app.snapshot()).toMatchObject({ level: Number(path.slice(1)), phase: 'playing' });
+    expect(browser.entries).toEqual([path]);
+    // 光是进去不算通过：那个数没动
+    expect(browser.storage.get(LEVEL)).toBe('12');
+  });
+
+  it.each(['/81', '/200', '/0', '/abc'])('still goes to the level in turn when the address is %s, which is no level', async (path) => {
+    const { app, browser } = await boot({ set: OPEN, reached: 12, path });
+    expect(app.snapshot()).toMatchObject({ level: 12, id: 'b12', phase: 'playing' });
+    expect(browser.entries).toEqual(['/12']);
+  });
+
+  it('opens on the level in turn at the root address, as it does when the switch is off', async () => {
+    const { app, browser } = await boot({ set: OPEN, reached: 12 });
+    expect(app.snapshot()).toMatchObject({ level: 12, phase: 'playing' });
+    expect(browser.entries).toEqual(['/12']);
+  });
+
+  it('shows the guide to a first-time player over whichever level the address names', async () => {
+    const { app, browser } = await boot({ set: OPEN, path: '/7', guide: 'stay' });
+    expect(browser.el('guide').hidden).toBe(false);
+    expect(app.snapshot()).toMatchObject({ level: 7, id: 'b07', guide: true });
+    await skipGuide(browser);
+    expect(app.snapshot()).toMatchObject({ level: 7, guide: false });
+    // 看完指引算是玩过了，但第 7 关还没通过：轮到的还是第 1 关
+    expect(browser.storage.get(LEVEL)).toBe('1');
+  });
+
+  it('goes back and forth between levels the player has not reached with the buttons of the browser', async () => {
+    const { app, browser } = await boot({ set: OPEN, reached: 2, path: '/30' });
+    await enter(browser, 20);
+    expect(browser.entries).toEqual(['/30', '/20']);
+    await browser.travel(-1);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 30, id: 'b30', steps: 0, phase: 'playing' });
+    expect(browser.path).toBe('/30');
+    await browser.travel(1);
+    await browser.seconds(3);
+    expect(app.snapshot()).toMatchObject({ level: 20, phase: 'playing' });
+  });
+
+  it('writes the result beside a level played out of turn before, but dyes only the leaves of levels that count as passed', async () => {
+    // 存档里第 9 关有成绩，那个数却只到第 3 关（手改回去的）：全部关卡开放着，第 9 关进得去，成绩照写，叶片不染
+    const bests = [3, 5, 0, 0, 0, 0, 0, 0, LEVELS[8].par];
+    const { browser } = await boot({ set: OPEN, bests, reached: 3, enter: null });
+    expect(kind(knot(browser, 9))).toBe('free');
+    expect(noteOf(knot(browser, 9))).toEqual({ stars: 3, text: `${LEVELS[8].par} 步` });
+    expect(knot(browser, 9).style.props['--tint']).toBeUndefined();
+    expect(knot(browser, 1).style.props['--tint']).toBe('#516bc6');
+  });
+});
+
 describe('the guide for first-time players', () => {
   /** 指引的三页各自亮没亮着 */
   const pages = (browser: FakeBrowser): boolean[] => [1, 2, 3].map((n) => !browser.el(`guide-page-${n}`).hidden);
@@ -1280,7 +1420,7 @@ describe('whatever is pressed, in whatever order', () => {
         return;
       }
       if (onTree()) {
-        // 在树上：多半是点一个木片进关（常常就是刚才那一关），有时按方向键、改窗口大小，有时什么都不做
+        // 在树上：多半是点一片叶片进关（常常就是刚才那一关），有时按方向键、改窗口大小，有时什么都不做
         if (r < 0.6) await browser.click(browser.knots()[rand() < 0.45 ? app.index : Math.floor(rand() * 4)]);
         else if (r < 0.8) await browser.key(pick(DIRS));
         else if (r < 0.85) browser.resize(320 + Math.floor(rand() * 600), 480 + Math.floor(rand() * 500));

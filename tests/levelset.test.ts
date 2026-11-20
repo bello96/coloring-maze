@@ -14,6 +14,27 @@ const set = (...levels: unknown[]): unknown => ({ version: 1, levels });
 /** rows 行、cols 列的一片空地，起点在左上角 */
 const open = (rows: number, cols: number): string[] => Array.from({ length: rows }, (_, r) => (r === 0 ? 'S' : '.') + '.'.repeat(cols - 1));
 
+/**
+ * rows 行、cols 列的一条来回折的走廊，连同它的走法：单数行（从 0 数起的双数）整行是地面，
+ * 夹在中间的那几行是墙、只在一头留一格，一行在右头、下一行在左头。往右、往下、往左、往下……一路走完，正好每格染到。
+ */
+function snake(rows: number, cols: number): { rows: string[]; par: number; solution: string } {
+  const map: string[] = [];
+  let solution = '';
+  for (let r = 0; r < rows; r++) {
+    if (r % 2 === 0) {
+      map.push((r === 0 ? 'S' : '.') + '.'.repeat(cols - 1));
+      solution += (r > 0 ? 'D' : '') + (r % 4 === 0 ? 'R' : 'L');
+    } else if (r === rows - 1) {
+      // 最底下多出来的一行全是墙
+      map.push('#'.repeat(cols));
+    } else {
+      map.push(r % 4 === 1 ? '#'.repeat(cols - 1) + '.' : '.' + '#'.repeat(cols - 1));
+    }
+  }
+  return { rows: map, par: solution.length, solution };
+}
+
 describe('the built-in level set', () => {
   it('is the 80 levels of the game, numbered b01 to b80, with the eight dyes taking turns', () => {
     expect(BUILTIN.version).toBe(1);
@@ -57,10 +78,30 @@ describe('checking a level set', () => {
   it('accepts 200 levels and the largest board either way up', () => {
     const many = Array.from({ length: 200 }, (_, i) => good({ id: `a${i}` }));
     expect(checkLevelSet(set(...many)).ok).toBe(true);
-    // 23×17 的空地：往右、往下一行行扫过去
+    // 内置的最后一关是 23×17
     const big = BUILTIN.levels[79];
     expect([big.rows.length, big.rows[0].length]).toEqual([23, 17]);
     expect(checkLevelSet(set(big)).ok).toBe(true);
+    // 最大的 25×20，竖着、横着各一张：一条来回折的走廊
+    for (const [rows, cols] of [[25, 20], [20, 25]] as const) {
+      const made = snake(rows, cols);
+      expect([made.rows.length, made.rows[0].length]).toEqual([rows, cols]);
+      expect(checkLevelSet(set(good(made))), `${rows}×${cols}`).toMatchObject({ ok: true });
+      // 走法掐掉最后一步就染不完了：上面那一句不是随便什么都放行
+      expect(checkLevelSet(set(good({ ...made, par: made.par - 1, solution: made.solution.slice(0, -1) }))).ok, `${rows}×${cols}`).toBe(false);
+    }
+  });
+
+  it('keeps the open-all switch only when it is on', () => {
+    expect(checkLevelSet({ version: 1, openAll: true, levels: [good()] })).toEqual({ ok: true, set: { version: 1, levels: [good()], openAll: true } });
+    // 关着的和没写的一样：整理出来的关卡表里没有这一项
+    const off = checkLevelSet({ version: 1, openAll: false, levels: [good()] });
+    expect(off).toEqual({ ok: true, set: { version: 1, levels: [good()] } });
+    expect(off.ok && 'openAll' in off.set).toBe(false);
+    expect(BUILTIN.openAll).toBeUndefined();
+    // 来回过一遍 JSON 还是开着的
+    const on = checkLevelSet(JSON.parse(JSON.stringify({ version: 1, levels: [good()], openAll: true })));
+    expect(on.ok && on.set.openAll).toBe(true);
   });
 
   const cases: ReadonlyArray<readonly [name: string, data: unknown, level: number, detail: RegExp]> = [
@@ -73,6 +114,9 @@ describe('checking a level set', () => {
     ['levels that are not a list', { version: 1, levels: 'x' }, -1, /格式/],
     ['no levels at all', set(), -1, /1–200/],
     ['201 levels', set(...Array.from({ length: 201 }, (_, i) => good({ id: `a${i}` }))), -1, /1–200/],
+    ['an open-all switch that is text', { version: 1, openAll: 'true', levels: [good()] }, -1, /开放全部关卡/],
+    ['an open-all switch that is a number', { version: 1, openAll: 1, levels: [good()] }, -1, /开放全部关卡/],
+    ['an open-all switch that is null', { version: 1, openAll: null, levels: [good()] }, -1, /开放全部关卡/],
 
     ['a level that is null', set(good(), null), 1, /格式/],
     ['a level that is a string', set(good(), 'x'), 1, /格式/],
@@ -95,11 +139,12 @@ describe('checking a level set', () => {
     ['a start written in lower case', set(good({ rows: ['s....', '#####', '#####', '#####', '#####'] })), 0, /三种字符/],
     ['a blank where a cell should be', set(good({ rows: ['S.. .', '#####', '#####', '#####', '#####'] })), 0, /三种字符/],
     ['a full-width full stop for floor', set(good({ rows: ['S..。.', '#####', '#####', '#####', '#####'] })), 0, /三种字符/],
-    ['only four rows', set(good({ rows: ROWS.slice(0, 4) })), 0, /5–23/],
-    ['only four columns', set(good({ rows: ROWS.map((row) => row.slice(0, 4)) })), 0, /5–23/],
-    ['24 rows', set(good({ rows: open(24, 5) })), 0, /5–23/],
-    ['a short side of 18', set(good({ rows: open(23, 18) })), 0, /5–23/],
-    ['18 by 18', set(good({ rows: open(18, 18) })), 0, /5–23/],
+    ['only four rows', set(good({ rows: ROWS.slice(0, 4) })), 0, /5–25 之间，长边最多 25，短边最多 20/],
+    ['only four columns', set(good({ rows: ROWS.map((row) => row.slice(0, 4)) })), 0, /5–25/],
+    ['26 rows', set(good({ rows: open(26, 5) })), 0, /5–25/],
+    ['26 columns', set(good({ rows: open(5, 26) })), 0, /5–25/],
+    ['a short side of 21', set(good({ rows: open(25, 21) })), 0, /5–25/],
+    ['21 by 21', set(good({ rows: open(21, 21) })), 0, /5–25/],
 
     ['two starts', set(good({ rows: ['S...S', '#####', '#####', '#####', '#####'] })), 0, /起点/],
     ['no start', set(good({ rows: ['.....', '#####', '#####', '#####', '#####'] })), 0, /起点/],
@@ -203,10 +248,10 @@ describe('the fingerprint of a map', () => {
 });
 
 describe('the sizes a board may have', () => {
-  it('are 5 to 23 either way, with the longer side at most 23 and the shorter at most 17', () => {
-    expect(LIMITS).toEqual({ maxLevels: 200, minSide: 5, maxLong: 23, maxShort: 17 });
-    const allowed: Array<[number, number]> = [[5, 5], [23, 17], [17, 23], [17, 17], [5, 23], [23, 5]];
-    const refused: Array<[number, number]> = [[4, 9], [9, 4], [24, 5], [5, 24], [18, 18], [23, 18], [18, 23], [5.5, 5], [0, 0]];
+  it('are 5 to 25 either way, with the longer side at most 25 and the shorter at most 20', () => {
+    expect(LIMITS).toEqual({ maxLevels: 200, minSide: 5, maxLong: 25, maxShort: 20 });
+    const allowed: Array<[number, number]> = [[5, 5], [25, 20], [20, 25], [20, 20], [5, 25], [25, 5], [23, 17], [17, 23]];
+    const refused: Array<[number, number]> = [[4, 9], [9, 4], [4, 4], [26, 5], [5, 26], [21, 21], [25, 21], [21, 25], [5.5, 5], [0, 0]];
     for (const [rows, cols] of allowed) expect(sizeOk(rows, cols), `${rows}×${cols}`).toBe(true);
     for (const [rows, cols] of refused) expect(sizeOk(rows, cols), `${rows}×${cols}`).toBe(false);
   });

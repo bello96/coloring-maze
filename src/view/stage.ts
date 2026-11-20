@@ -201,22 +201,38 @@ export class Stage {
 
   /**
    * 把木纹缩小成图片地址给界面当底纹，这样界面上的木头和托盘是同一种木头：
-   * dark、light 给木片按钮、木牌、圆木片；plank 给选关树的那块长木板；table 是桌面，电脑上选关树两边露出来的就是它。
+   * dark、light 给木片按钮、木牌、选关树上的叶片；plank 给选关树的那块长木板，trunk 给那棵树的树干和枝杈；
+   * table 是桌面，电脑上选关树两边露出来的就是它。
    */
-  woodUrls(): { dark: string; light: string; plank: string; table: string } {
+  woodUrls(): WoodUrls {
     const shrink = (source: HTMLCanvasElement): string => {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 512;
       canvas.getContext('2d')!.drawImage(source, 0, 0, 512, 512);
       return canvas.toDataURL('image/jpeg', 0.82);
     };
-    return { dark: shrink(this.woods.dark), light: shrink(this.woods.light), plank: plank(this.woods.dark), table: tile(this.woods.table) };
+    return {
+      dark: shrink(this.woods.dark),
+      light: shrink(this.woods.light),
+      plank: plank(this.woods.dark),
+      trunk: plank(this.woods.light),
+      table: tile(this.woods.table),
+    };
   }
 }
 
+/** 给界面当底纹的几张木纹，都是图片地址（见 Stage.woodUrls） */
+export interface WoodUrls {
+  readonly dark: string;
+  readonly light: string;
+  readonly plank: string;
+  readonly trunk: string;
+  readonly table: string;
+}
+
 /**
- * 选关树那块长木板的底纹。木板有好几千像素长，底纹得一张接一张地往下铺：
- * 把木纹和它上下翻过来的样子接成一张，这样无论接在哪一头，接缝两边的纹理都是连着的。
+ * 选关树那块长木板的底纹，那棵树的树干用的也是这样的一张（浅色的那种木头）。木板、树干都有好几千像素长，
+ * 底纹得一张接一张地往下铺：把木纹和它上下翻过来的样子接成一张，这样无论接在哪一头，接缝两边的纹理都是连着的。
  * 木纹本来就是竖着走的（顺着木板的长边），不用转。
  */
 function plank(source: HTMLCanvasElement): string {

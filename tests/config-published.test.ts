@@ -33,6 +33,17 @@ describe('what this browser published a moment ago', () => {
     expect(recentlyPublished(shelf, T0 + TRUST_MS - 1)).toEqual(MINE);
   });
 
+  it('comes back with the open-all switch as it was published, on or off', () => {
+    const shelf = new Shelf();
+    const open: LevelSet = { ...MINE, openAll: true };
+    rememberPublished(shelf, open, T0);
+    expect(recentlyPublished(shelf, T0 + 1000)).toEqual(open);
+    rememberPublished(shelf, MINE, T0 + 2000);
+    const off = recentlyPublished(shelf, T0 + 3000);
+    expect(off).toEqual(MINE);
+    expect(off !== null && 'openAll' in off).toBe(false);
+  });
+
   it('is no longer used once two minutes have passed: by then the server has caught up', () => {
     const shelf = new Shelf();
     rememberPublished(shelf, MINE, T0);

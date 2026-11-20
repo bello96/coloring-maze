@@ -176,6 +176,26 @@ describe('publishing', () => {
     expect(JSON.parse(kv.data.get('levels') ?? '')).toEqual(BUILTIN);
   });
 
+  it('stores the open-all switch when it is on, and nothing about it when it is off', async () => {
+    const on = JSON.stringify({ version: 1, openAll: true, levels: [good()] });
+    expect(await answer(call('PUT', { token: 'secret', body: on }))).toEqual({ status: 200, body: { ok: true, count: 1 } });
+    expect(kv.data.get('levels')).toBe(stored('aa').replace(/\}$/, ',"openAll":true}'));
+    expect(JSON.parse(await (await call('GET')).text())).toEqual({ version: 1, levels: [good()], openAll: true });
+    // 关掉再发布：存下来的和从来没有这个开关时一模一样
+    const off = JSON.stringify({ version: 1, openAll: false, levels: [good()] });
+    expect((await call('PUT', { token: 'secret', body: off })).status).toBe(200);
+    expect(kv.data.get('levels')).toBe(stored('aa'));
+  });
+
+  it('turns down an open-all switch that is neither on nor off', async () => {
+    const body = JSON.stringify({ version: 1, openAll: 'yes', levels: [good()] });
+    expect(await answer(call('PUT', { token: 'secret', body }))).toEqual({
+      status: 400,
+      body: { error: 'invalid', detail: expect.stringMatching(/开放全部关卡/), level: 0 },
+    });
+    expect(kv.data.has('levels')).toBe(false);
+  });
+
   it('turns away a wrong token and leaves what is published alone', async () => {
     kv.data.set('levels', stored('aa'));
     expect(await answer(call('PUT', { token: 'wrong', body: set(good({ id: 'bb' })) }))).toEqual({ status: 401, body: { error: 'unauthorized' } });

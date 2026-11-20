@@ -15,13 +15,25 @@ export interface LevelEntry extends LevelDef {
 export interface LevelSet {
   readonly version: 1;
   readonly levels: readonly LevelEntry[];
+  /**
+   * 开放全部关卡：开着的时候每一关都能直接进，不用先通过前一关。配置页上的那个开关存的就是它。
+   * 关着的时候没有这一项（不写成 false）：这样没开过这个开关的关卡表，存下来的和加这个开关之前一模一样。
+   */
+  readonly openAll?: true;
 }
 
 /**
- * 尺寸上的规定。最大 23×17 是内置关卡里最大的一张，画面、手机上的格子大小、求解要多久都实测过；
+ * 尺寸上的规定。最大 25×20：比内置关卡里最大的一张（23×17）再大一圈。这个上限不是哪里写死了做不到，
+ * 而是图越大有三样东西一起变差，2026-11-20 都实测过——
+ *   手机上的格子变小：竖屏 390×844 的手机上，23×17 一格约 15.5 像素，25×20 约 13.5 像素（360×740 上是 14.2 和 12.4）；
+ *   配置页算最少步数变慢：数字在 config/checker.ts 的 SOLVE_LIMIT_MS 那里；
+ *   发布时服务端校验变慢：数字在 worker/api.ts 开头。
  * 最小 5 是因为长边不到 5 格时墙会高出取景范围（见 view/stage.ts 的 TALLEST）。
  */
-export const LIMITS = { maxLevels: 200, minSide: 5, maxLong: 23, maxShort: 17 } as const;
+export const LIMITS = { maxLevels: 200, minSide: 5, maxLong: 25, maxShort: 20 } as const;
+
+/** 尺寸不合规定时说的那句话 */
+const SIZE_RULE = `行、列都要在 ${LIMITS.minSide}–${LIMITS.maxLong} 之间，长边最多 ${LIMITS.maxLong}，短边最多 ${LIMITS.maxShort}`;
 
 /** 八种现成的染料：靛蓝、茜红、松绿、藤黄、紫、叶绿、玫红、湖蓝。内置的关卡按顺序轮着用 */
 export const DYES: readonly string[] = ['#2646b8', '#c0302b', '#0e8a78', '#dd8e10', '#6f3bb5', '#3f8f2e', '#cf3f77', '#1787c2'];
@@ -31,7 +43,7 @@ export function dyeNumber(css: string): number {
   return parseInt(css.slice(1), 16);
 }
 
-/** rows 行、cols 列的图合不合尺寸上的规定：行、列各 5–23，长边最多 23，短边最多 17 */
+/** rows 行、cols 列的图合不合尺寸上的规定：行、列各 5–25，长边最多 25，短边最多 20 */
 export function sizeOk(rows: number, cols: number): boolean {
   if (!Number.isInteger(rows) || !Number.isInteger(cols)) return false;
   const long = Math.max(rows, cols);
@@ -70,7 +82,7 @@ function entryOf(value: unknown, taken: ReadonlySet<string>): LevelEntry | strin
   if (typeof first !== 'string' || first.length === 0) return ROWS_SHAPE;
   for (const row of rows) if (typeof row !== 'string' || row.length !== first.length) return ROWS_SHAPE;
   const map = rows as readonly string[];
-  if (!sizeOk(map.length, first.length)) return '行、列都要在 5–23 之间，长边最多 23，短边最多 17';
+  if (!sizeOk(map.length, first.length)) return SIZE_RULE;
   // 边查字符边把图读出来（和 level.ts 的 parseLevel 读出来的一样，只是不用再扫第二遍：这里的每一毫秒都要省，见 follow 的说明）
   const cols = first.length;
   const floor = new Uint8Array(map.length * cols);
@@ -151,13 +163,15 @@ function follow(level: Level, solution: string): string | null {
 /**
  * 关卡表的基本校验：格式、尺寸、形状，以及"照着给出的走法确实能通关"。
  * "给出的步数是不是最少"这里不查（太贵，要整数规划来算，配置页在发布前算好）。
- * 通过时返回整理过的关卡表：只留认识的字段，染料统一成小写。
+ * 通过时返回整理过的关卡表：只留认识的字段，染料统一成小写；"开放全部关卡"关着的时候不带那一项。
  */
 export function checkLevelSet(data: unknown): Checked {
   const whole = (detail: string): Checked => ({ ok: false, level: -1, detail });
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return whole('关卡表的格式不对');
-  const { version, levels } = data as Record<string, unknown>;
+  const { version, levels, openAll } = data as Record<string, unknown>;
   if (version !== 1 || !Array.isArray(levels)) return whole('关卡表的格式不对');
+  // 没有这一项就是关着；有的话只能是 true 或 false
+  if (openAll !== undefined && typeof openAll !== 'boolean') return whole('「开放全部关卡」只能是开或者关');
   if (levels.length < 1 || levels.length > LIMITS.maxLevels) return whole(`关卡数要在 1–${LIMITS.maxLevels} 之间`);
 
   const taken = new Set<string>();
@@ -168,7 +182,7 @@ export function checkLevelSet(data: unknown): Checked {
     taken.add(entry.id);
     out.push(entry);
   }
-  return { ok: true, set: { version: 1, levels: out } };
+  return { ok: true, set: openAll === true ? { version: 1, levels: out, openAll: true } : { version: 1, levels: out } };
 }
 
 function builtIn(): LevelSet {

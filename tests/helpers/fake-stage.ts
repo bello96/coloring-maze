@@ -1,6 +1,6 @@
 // 替身舞台：不碰 WebGL，只记下被调用了多少次。接口和 src/view/stage.ts 里的 Stage 一样。
 import * as THREE from 'three';
-import type { Extent, Insets } from '../../src/view/stage.ts';
+import type { Extent, Insets, WoodUrls } from '../../src/view/stage.ts';
 
 /** 正方形托盘的大小（和真舞台里的一样：外边长 12.5 的一半） */
 export const SQUARE: Extent = { halfWidth: 6.25, halfDepth: 6.25 };
@@ -43,7 +43,7 @@ export class Stage {
     return '';
   }
 
-  woodUrls(): { dark: string; light: string; plank: string; table: string } {
-    return { dark: 'data:,', light: 'data:,', plank: 'data:,', table: 'data:,' };
+  woodUrls(): WoodUrls {
+    return { dark: 'data:,', light: 'data:,', plank: 'data:,', trunk: 'data:,', table: 'data:,' };
   }
 }
