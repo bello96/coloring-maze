@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Level } from '../game/level.ts';
-import { BASE_THICKNESS, FLOOR_SIZE, OUTER, trayDims } from './dims.ts';
+import { BASE_THICKNESS, FLOOR_SIZE, OUTER, trayDims, type Room } from './dims.ts';
 import { traceFloor, type Point } from './outline.ts';
 import { Stain } from './stain.ts';
 
@@ -51,10 +51,14 @@ export class Tray {
   readonly ballRadius: number;
   private readonly owned: Array<{ dispose(): void }> = [];
 
-  constructor(level: Level, assets: TrayAssets, dye: THREE.Color) {
+  /**
+   * @param room 屏幕上留给托盘的那一块（CSS 像素）：边框在屏幕上不能比 BORDER_LEAST_PX 还窄（见 dims.ts）。
+   *             摆好之后窗口再变也不改，到下一关才按那时的屏幕算
+   */
+  constructor(level: Level, assets: TrayAssets, dye: THREE.Color, room?: Room) {
     this.level = level;
     const { rows, cols } = level;
-    const dims = trayDims(rows, cols);
+    const dims = trayDims(rows, cols, room);
     this.cell = dims.cell;
     this.width = dims.outerWidth;
     this.depth = dims.outerDepth;

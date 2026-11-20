@@ -7,6 +7,7 @@ import { BUILTIN, sigOf, type LevelSet } from '../src/game/levelset.ts';
 import { keysOf, type Progress } from '../src/game/progress.ts';
 import { isDone, steps, type Game } from '../src/game/rules.ts';
 import { layoutTree } from '../src/ui/tree.ts';
+import { trayDims, type TrayDims } from '../src/view/dims.ts';
 import { FakeBrowser, type FakeEl } from './helpers/fake-browser.ts';
 import { seeded } from './helpers/random.ts';
 
@@ -1316,15 +1317,22 @@ describe('a rectangular level', () => {
   // 第 51 关：存的是 19 行 × 15 列
   const upTo51 = { bests: new Array<number>(LEVELS.length).fill(999), enter: 51 };
   const WIDE = { width: 1280, height: 720 };
-  // 底板长的一边（19 格）总是 10 长；四周的边框是一格的 0.4 倍
-  const border = 0.4 * (10 / 19);
+  /** rows 行、cols 列的托盘在现在这块屏幕上该有多大：屏幕上留给托盘的那一块，就是最后一次取景时四边让出界面之后剩下的 */
+  const expected = (app: Inner, rows: number, cols: number): TrayDims => {
+    const last = app.view.stage.resizes.at(-1)!;
+    return trayDims(rows, cols, { width: last.width - last.safe.left - last.safe.right, height: last.height - last.safe.top - last.safe.bottom });
+  };
 
   it('stands upright on a tall screen', async () => {
     const { app } = await boot(upTo51);
     expect([app.level.rows, app.level.cols]).toEqual([19, 15]);
     const { tray } = app.view.board;
-    expect(tray.depth).toBeCloseTo(10 + 2 * border, 9);
-    expect(tray.width).toBeCloseTo((15 * 10) / 19 + 2 * border, 9);
+    const want = expected(app, 19, 15);
+    expect(tray.depth).toBeCloseTo(want.outerDepth, 9);
+    expect(tray.width).toBeCloseTo(want.outerWidth, 9);
+    // 底板长的一边（19 格）总是 10 长；手机上一格只有十几像素，0.4 格太窄，边框放宽到了屏幕上 14 像素
+    expect(want.floorDepth).toBeCloseTo(10, 9);
+    expect(want.border).toBeGreaterThan(0.4 * (10 / 19));
     expect(app.snapshot().solution).toBe(LEVELS[50].solution);
   });
 
@@ -1332,8 +1340,10 @@ describe('a rectangular level', () => {
     const { app, browser } = await boot({ ...upTo51, screen: WIDE });
     expect([app.level.rows, app.level.cols]).toEqual([15, 19]);
     const { tray } = app.view.board;
-    expect(tray.width).toBeCloseTo(10 + 2 * border, 9);
-    expect(tray.depth).toBeCloseTo((15 * 10) / 19 + 2 * border, 9);
+    const want = expected(app, 15, 19);
+    expect(tray.width).toBeCloseTo(want.outerWidth, 9);
+    expect(tray.depth).toBeCloseTo(want.outerDepth, 9);
+    expect(want.floorWidth).toBeCloseTo(10, 9);
     // 还是同一关：地面一样多，最少步数一样
     expect(app.level.floorCount).toBe(LEVELS[50].rows.join('').replaceAll('#', '').length);
     expect(browser.el('par').textContent).toBe(`第 51 关 · 最少 ${LEVELS[50].par} 步`);
@@ -1379,7 +1389,7 @@ describe('a rectangular level', () => {
     const { app, browser } = await boot({ ...upTo51, enter: 50, screen: WIDE });
     const stage = app.view.stage;
     // 第 50 关是 15×15 的正方形
-    const square = (10 + 2 * 0.4 * (10 / 15)) / 2;
+    const square = expected(app, 15, 15).outerWidth / 2;
     expect(stage.resizes.at(-1)!.box.halfWidth).toBeCloseTo(square, 9);
     expect(stage.resizes.at(-1)!.box.halfDepth).toBeCloseTo(square, 9);
     const before = stage.resizes.length;

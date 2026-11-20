@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { STEP, type Dir, type Level } from '../game/level.ts';
 import type { Move } from '../game/rules.ts';
+import type { Room } from './dims.ts';
 import { Drops } from './drops.ts';
 import { Marble } from './marble.ts';
 import { rollProfile, settle } from './motion.ts';
@@ -258,6 +259,13 @@ export class GameView {
     if (this.shot) this.stage.resize(this.size.width, this.size.height, this.governor.ratio, this.shot.safe, this.shot.box);
   }
 
+  /** 屏幕上留给托盘的那一块有多大（CSS 像素），托盘的边框按它定一个最窄的宽度（见 dims.ts）。还没取过景就不知道 */
+  private room(): Room | undefined {
+    const safe = this.aimSafe;
+    if (!safe || this.size.width <= 0 || this.size.height <= 0) return undefined;
+    return { width: this.size.width - safe.left - safe.right, height: this.size.height - safe.top - safe.bottom };
+  }
+
   /**
    * 画面被整个盖住了（选关树亮出来），或者又露出来了。
    * 盖住的时候：正演到一半的动画照常演完——外面的人还等着它结束——但一帧也不画，也不拿这些帧去量快慢
@@ -280,7 +288,7 @@ export class GameView {
    */
   async enter(level: Level, dyeHex: number): Promise<void> {
     const dye = new THREE.Color(dyeHex);
-    const tray = new Tray(level, this.stage.assets, dye);
+    const tray = new Tray(level, this.stage.assets, dye, this.room());
     const marble = new Marble(tray.ballRadius, dye);
     const drops = new Drops(dye, (x, z) => tray.isFloorAt(x, z));
     marble.group.visible = false;
